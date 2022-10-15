@@ -1,28 +1,25 @@
 mod kv;
 mod kv_handler;
 
-
-#[actix_rt::main]
+#[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use actix_web::{
         middleware::Logger,
-        web::{scope, resource, get, post, delete},
-        App,
-        HttpServer
+        web::{delete, get, post, resource, scope, Data},
+        App, HttpServer,
     };
 
-    let db: kv::RocksDB = kv::KVStore::init("/tmp/rocks/actix-db");
+    let db: kv::RocksDB = kv::KVStore::init("rocks.db");
 
-    std::env::set_var("RUST_LOG", "actix_web=info,actix_server=info");
+    std::env::set_var("RUST_LOG", "debug,actix_web=debug,actix_server=debug");
     env_logger::init();
 
     HttpServer::new(move || {
         App::new()
-            .data(db.clone())
+            .app_data(Data::new(db.clone()))
             .wrap(Logger::default())
             .service(
-                scope("/api")
-                .service(
+                scope("/api").service(
                     resource("/{key}")
                         .route(get().to(kv_handler::get))
                         .route(post().to(kv_handler::post))
@@ -30,7 +27,7 @@ async fn main() -> std::io::Result<()> {
                 ),
             )
     })
-    .bind("0.0.0.0:8080")?
+    .bind("0.0.0:3031")?
     .run()
     .await
 }

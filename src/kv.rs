@@ -13,10 +13,11 @@ pub struct RocksDB {
     db: Arc<DB>,
 }
 
-
 impl KVStore for RocksDB {
     fn init(file_path: &str) -> Self {
-        RocksDB { db: Arc::new(DB::open_default(file_path).unwrap()) }
+        RocksDB {
+            db: Arc::new(DB::open_default(file_path).unwrap()),
+        }
     }
 
     fn save(&self, k: &str, v: &str) -> bool {
@@ -27,15 +28,13 @@ impl KVStore for RocksDB {
         match self.db.get(k.as_bytes()) {
             Ok(Some(v)) => {
                 let result = String::from_utf8(v).unwrap();
-                println!("Finding '{}' returns '{}'", k, result);
                 Some(result)
-            },
+            }
             Ok(None) => {
-                println!("Finding '{}' returns None", k);
                 None
-            },
+            }
             Err(e) => {
-                println!("Error retrieving value for {}: {}", k, e);
+                log::error!("Error retrieving value for {}: {}", k, e);
                 None
             }
         }
