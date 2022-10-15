@@ -67,18 +67,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "actix-rocksdb"
-version = "0.1.0"
-dependencies = [
- "actix-web",
- "bytes",
- "env_logger",
- "log",
- "rocksdb",
- "serde_json",
-]
-
-[[package]]
 name = "actix-router"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1071,6 +1059,18 @@ name = "smallvec"
 version = "1.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a507befe795404456341dfab10cef66ead4c041f62b8b11bbb92bffe5d0953e0"
+
+[[package]]
+name = "smol-kv"
+version = "0.1.0"
+dependencies = [
+ "actix-web",
+ "bytes",
+ "env_logger",
+ "log",
+ "rocksdb",
+ "serde_json",
+]
 
 [[package]]
 name = "socket2"
