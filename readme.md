@@ -3,7 +3,7 @@ Minimal working setup of Actix-web with RocksDB being used as a simple JSON KV s
 
 ## Quick Start
 ```bash
-❯ docker run -p 5050:5050 -e DATABASE_PATH=/rocksdb -v $(pwd)/rocksdb:/rocksdb mpwsh/actix-rocksdb:latest
+❯ docker run -p 5050:5050 -e DATABASE_PATH=/rocksdb -v $(pwd)/rocksdb:/rocksdb mpwsh/smol-kv:latest
 ```
 
 

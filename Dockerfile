@@ -16,6 +16,6 @@ COPY scripts scripts
 RUN scripts/strip-bins.sh target/release bin
 
 FROM debian:bullseye-slim AS base
-COPY --from=build build/bin/actix-rocksdb bin/
+COPY --from=build build/bin/smol-kv bin/
 EXPOSE 5050
-CMD ["./bin/actix-rocksdb"]
+CMD ["./bin/smol-kv"]
