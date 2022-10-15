@@ -8,7 +8,7 @@ Minimal working setup of Actix-web with RocksDB being used as a simple JSON KV s
 
 ## Configuration
 Set the following env vars to configure the server (optional)
-```toml
+```bash
 PORT=5050
 WORKERS=4
 LOG_LEVEL=info
