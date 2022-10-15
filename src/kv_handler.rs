@@ -12,7 +12,6 @@ pub async fn get(key: Path<String>, db: Data<RocksDB>) -> HttpResponse {
         Some(v) => {
             serde_json::from_str(&v)
                 .map(|obj: Value|{
-                     println!("{}", obj);
                     HttpResponse::Ok()
                         .content_type("application/json")
                         .body(obj.to_string())
