@@ -9,11 +9,24 @@ async fn main() -> std::io::Result<()> {
         App, HttpServer,
     };
 
-    let db: kv::RocksDB = kv::KVStore::init("rocks.db");
-
-    std::env::set_var("RUST_LOG", "debug,actix_web=debug,actix_server=debug");
+    let port = std::env::var("PORT")
+        .unwrap_or("5050".to_string())
+        .parse::<u16>()
+        .unwrap();
+    let workers = std::env::var("WORKERS")
+        .unwrap_or("4".to_string())
+        .parse::<usize>()
+        .unwrap();
+    let db_path = std::env::var("DATABABASE_PATH").unwrap_or("./rocksdb".to_string());
+    let log_level = std::env::var("LOG_LEVEL").unwrap_or("info".to_string());
+    let db: kv::RocksDB = kv::KVStore::init(&db_path);
+    std::env::set_var(
+        "RUST_LOG",
+        format!("{},actix_web=debug,actix_server=debug", log_level),
+    );
     env_logger::init();
 
+    log::info!("starting HTTP server at http://0.0.0.0:{}", port);
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(db.clone()))
@@ -27,7 +40,8 @@ async fn main() -> std::io::Result<()> {
                 ),
             )
     })
-    .bind("0.0.0:3031")?
+    .bind(("0.0.0.0", port))?
+    .workers(workers)
     .run()
     .await
 }

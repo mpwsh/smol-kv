@@ -30,9 +30,7 @@ impl KVStore for RocksDB {
                 let result = String::from_utf8(v).unwrap();
                 Some(result)
             }
-            Ok(None) => {
-                None
-            }
+            Ok(None) => None,
             Err(e) => {
                 log::error!("Error retrieving value for {}: {}", k, e);
                 None
