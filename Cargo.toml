@@ -1,5 +1,5 @@
 [package]
-name = "actix-rocksdb"
+name = "smol-kv"
 version = "0.1.0"
 authors = ["Uk <ukchukundah@gmail.com>", "mpw <x@mpw.sh>"]
 edition = "2021"
