@@ -1,7 +1,13 @@
 ## Description
 Minimal working setup of Actix-web with RocksDB being used as a simple JSON KV store or cache.
 
-## Build
+## Quick Start
+```bash
+❯ docker run -p 5050:5050 -e DATABASE_PATH=/rocksdb -v $(pwd)/rocksdb:/rocksdb mpwsh/actix-rocksdb:latest
+```
+
+
+## Build from source
 ```bash
 ❯ cargo build --release
 ```
