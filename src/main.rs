@@ -22,11 +22,11 @@ async fn main() -> std::io::Result<()> {
     let db: kv::RocksDB = kv::KVStore::init(&db_path);
     std::env::set_var(
         "RUST_LOG",
-        format!("{},actix_web=debug,actix_server=debug", log_level),
+        format!("{0},actix_web={0},actix_server={0}", log_level),
     );
     env_logger::init();
 
-    log::info!("starting HTTP server at http://0.0.0.0:{}", port);
+    log::info!("starting HTTP server at http://0.0.0.0:{port}");
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(db.clone()))
