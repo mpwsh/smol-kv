@@ -76,7 +76,7 @@ drill --benchmark benchmark/plan.yaml  --stats
 
 
 ### Results
-'Failed requests' are 404 assertions, so those are actually successfull. Yea, weird
+'Failed requests' are 404 assertions, so those are actually successfull.
 ```text
 Time taken for tests      4.9 seconds
 Total requests            4000
@@ -89,49 +89,4 @@ Sample standard deviation 9ms
 99.0'th percentile        33ms
 99.5'th percentile        34ms
 99.9'th percentile        37ms
-```
-
-
-Looks like `DELETE` is the most costly operation
-
-```text
-Try fetch unavailable data Total requests            1000
-Try fetch unavailable data Successful requests       0
-Try fetch unavailable data Failed requests           1000
-Try fetch unavailable data Median time per request   14ms
-Try fetch unavailable data Average time per request  16ms
-Try fetch unavailable data Sample standard deviation 11ms
-Try fetch unavailable data 99.0'th percentile        35ms
-Try fetch unavailable data 99.5'th percentile        36ms
-Try fetch unavailable data 99.9'th percentile        41ms
-
-POST dummy JSON data      Total requests            1000
-POST dummy JSON data      Successful requests       1000
-POST dummy JSON data      Failed requests           0
-POST dummy JSON data      Median time per request   0ms
-POST dummy JSON data      Average time per request  1ms
-POST dummy JSON data      Sample standard deviation 2ms
-POST dummy JSON data      99.0'th percentile        11ms
-POST dummy JSON data      99.5'th percentile        19ms
-POST dummy JSON data      99.9'th percentile        20ms
-
-Try fetch existing data   Total requests            1000
-Try fetch existing data   Successful requests       1000
-Try fetch existing data   Failed requests           0
-Try fetch existing data   Median time per request   0ms
-Try fetch existing data   Average time per request  0ms
-Try fetch existing data   Sample standard deviation 2ms
-Try fetch existing data   99.0'th percentile        5ms
-Try fetch existing data   99.5'th percentile        17ms
-Try fetch existing data   99.9'th percentile        19ms
-
-DELETE created entry      Total requests            1000
-DELETE created entry      Successful requests       1000
-DELETE created entry      Failed requests           0
-DELETE created entry      Median time per request   0ms
-DELETE created entry      Average time per request  1ms
-DELETE created entry      Sample standard deviation 3ms
-DELETE created entry      99.0'th percentile        19ms
-DELETE created entry      99.5'th percentile        20ms
-DELETE created entry      99.9'th percentile        32ms
 ```
