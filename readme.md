@@ -67,7 +67,7 @@ Hitting `http://localhost:5050/api/yourkey` with a `GET` request should output t
 ```
 
 
-## Benchmarks
+## Benchmark
 A [Drill](https://github.com/fcsonline/drill) plan is available in the [benchmark](benchmark) folder.
 To run install `drill` using `cargo` and execute:
 ```bash
@@ -75,16 +75,16 @@ drill --benchmark benchmark/plan.yaml  --stats
 ```
 
 
-### Results
-'Failed requests' are 404 assertions, so those are actually successful.
-
-> System details: AMD Ryzen 7 3700X, 32 GB Ram, Samsung SSD 970 EVO Plus
-
+### Plan
 ```yaml
 iterations: 2000
 concurrency: 4
 rampup: 4
 ```
+> System details: AMD Ryzen 7 3700X, 32 GB Ram, Samsung SSD 970 EVO Plus
+
+### Results
+'Failed requests' are 404 assertions, so those are actually successful.
 
 ```text
 Time taken for tests      4.2 seconds
