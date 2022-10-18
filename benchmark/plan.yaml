@@ -1,7 +1,7 @@
 ---
 base: 'http://0.0.0.0:5050'
-iterations: 1000
-concurrency: 8
+iterations: 2000
+concurrency: 4
 rampup: 4
 
 plan:
