@@ -1,11 +1,11 @@
 name: Build and push
+name: Kubernetes deployment
 
 on:
   push:
-    tags:
-      - '*'
-    branches:
-      - [ dev, main ]
+    branches: [ dev, master ]
+    tags: ['*']
+
 jobs:
   build-and-push-image:
     runs-on: ubuntu-latest
