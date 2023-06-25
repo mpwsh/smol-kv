@@ -1,6 +1,6 @@
 ---
 base: 'http://127.0.0.1:5050'
-iterations: 2000
+iterations: 4000
 concurrency: 8
 rampup: 2
 
