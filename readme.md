@@ -87,15 +87,15 @@ rampup: 4
 'Failed requests' are 404 assertions, so those are actually successful.
 
 ```text
-Time taken for tests      4.2 seconds
+Time taken for tests      3.6 seconds
 Total requests            8000
 Successful requests       6000
 Failed requests           2000
-Requests per second       1886.13 [#/sec]
+Requests per second       2239.79 [#/sec]
 Median time per request   0ms
-Average time per request  1ms
-Sample standard deviation 1ms
-99.0'th percentile        5ms
-99.5'th percentile        6ms
-99.9'th percentile        6ms
+Average time per request  2ms
+Sample standard deviation 3ms
+99.0'th percentile        11ms
+99.5'th percentile        11ms
+99.9'th percentile        11ms
 ```
