@@ -1,13 +1,13 @@
 ---
-base: 'http://0.0.0.0:5050'
+base: 'http://127.0.0.1:5050'
 iterations: 2000
-concurrency: 4
+concurrency: 8
 rampup: 4
 
 plan:
   - name: Generate some random sha1 to use as key
     exec:
-      command: "echo ${RANDOM}$(date +%s) | sha1sum  | tr -d -"
+      command: "echo ${RANDOM}${RANDOM}$(date +%s) | sha1sum  | tr -d -"
     assign: sha
 
   - name: Try fetch unavailable data
