@@ -5,7 +5,7 @@ mod kv_handler;
 async fn main() -> std::io::Result<()> {
     use actix_web::{
         middleware::Logger,
-        web::{delete, get, post, resource, scope, Data},
+        web::{delete, get, post, resource, scope, Data, PayloadConfig, JsonConfig},
         App, HttpServer,
     };
 
@@ -30,6 +30,8 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         App::new()
             .app_data(Data::new(db.clone()))
+            .app_data(JsonConfig::default().limit(1024 * 1024 * 50))
+            .app_data(PayloadConfig::new(1 << 25))
             .wrap(Logger::default())
             .service(
                 scope("/api").service(
