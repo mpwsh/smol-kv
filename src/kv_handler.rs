@@ -2,9 +2,17 @@ use crate::kv::{KVStore, RocksDB};
 use actix_web::{
     web::{Data, Path},
     HttpResponse,
+    Responder,
 };
 use bytes::Bytes;
 use serde_json::{json, Value};
+
+pub async fn head(key: Path<String>, db: Data<RocksDB>) -> impl Responder {
+    match &db.find(&key.into_inner()) {
+        Some(_) => HttpResponse::Ok().finish(),
+        None => HttpResponse::NotFound().finish(),
+    }
+}
 
 pub async fn get(key: Path<String>, db: Data<RocksDB>) -> HttpResponse {
     match &db.find(&key.into_inner()) {
