@@ -5,7 +5,7 @@ mod kv_handler;
 async fn main() -> std::io::Result<()> {
     use actix_web::{
         middleware::Logger,
-        web::{delete, head, get, post, resource, scope, Data, PayloadConfig, JsonConfig},
+        web::{delete, get, head, post, resource, scope, Data, JsonConfig, PayloadConfig},
         App, HttpServer,
     };
 

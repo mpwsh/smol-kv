@@ -1,4 +1,4 @@
-FROM rust:1.64.0-slim-bullseye AS build
+FROM rust:1.70.0-slim-bookworm AS build
 WORKDIR /build
 
 RUN apt-get update -y && \
@@ -15,7 +15,7 @@ RUN cargo build --locked --release
 COPY scripts scripts
 RUN scripts/strip-bins.sh target/release bin
 
-FROM debian:bullseye-slim AS base
+FROM debian:bookworm-slim AS base
 COPY --from=build build/bin/smol-kv bin/
 EXPOSE 5050
 CMD ["./bin/smol-kv"]
