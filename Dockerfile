@@ -1,4 +1,4 @@
-FROM rust:1.70.0-slim-bookworm AS build
+FROM rust:1.73.0-slim-bookworm AS build
 WORKDIR /build
 
 RUN apt-get update -y && \
