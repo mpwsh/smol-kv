@@ -22,33 +22,31 @@ jobs:
           - os_name: Linux-aarch64
             os: ubuntu-20.04
             target: aarch64-unknown-linux-musl
-            bin: splash-linux-arm64
+            bin: ${{ github.event.repository.name }}-linux-arm64
           - os_name: Linux-x86_64
             os: ubuntu-20.04
             target: x86_64-unknown-linux-musl
-            bin: splash-linux-amd64
+            bin: ${{ github.event.repository.name }}-linux-amd64
           - os_name: Windows-x86_64
             os: windows-latest
             target: x86_64-pc-windows-msvc
-            bin: splash-amd64.exe
+            bin: ${{ github.event.repository.name }}-amd64.exe
           - os_name: macOS-x86_64
             os: macOS-latest
             target: x86_64-apple-darwin
-            bin: splash-darwin-amd64
+            bin: ${{ github.event.repository.name }}-darwin-amd64
           - os_name: macOS-aarch64
             os: macOS-latest
             target: aarch64-apple-darwin
-            bin: splash-darwin-arm64
+            bin: ${{ github.event.repository.name }}-darwin-arm64
         toolchain:
           - stable
     steps:
       - uses: actions/checkout@v3
-      - name: Install LLVM and Clang
-        uses: KyleMayes/install-llvm-action@v1.9.0
       - name: Install Linux musl-tools
         if: contains(matrix.platform.target, 'musl')
         run: |
-          sudo apt-get install --yes --no-install-recommends musl-tools
+          sudo apt-get install --yes --no-install-recommends musl-tools clang
           sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0
@@ -59,10 +57,10 @@ jobs:
           args: "--locked --release"
           strip: true
       - name: Rename binary (linux and macos)
-        run: mv target/${{ matrix.platform.target }}/release/splash target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
+        run: mv target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }} target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
         if: matrix.platform.os_name != 'Windows-x86_64'
       - name: Rename binary (windows)
-        run: mv target/${{ matrix.platform.target }}/release/splash.exe target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
+        run: mv target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }}.exe target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
         if: matrix.platform.os_name == 'Windows-x86_64'
       - name: Generate SHA-256
         run: shasum -a 256 target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }} | cut -d ' ' -f 1 > target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}.sha256
