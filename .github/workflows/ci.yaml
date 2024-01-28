@@ -43,11 +43,13 @@ jobs:
           - stable
     steps:
       - uses: actions/checkout@v3
+      - name: Install LLVM and Clang
+        uses: KyleMayes/install-llvm-action@v1.9.0
       - name: Install Linux musl-tools
         if: contains(matrix.platform.target, 'musl')
-        run: sudo apt-get install --yes --no-install-recommends musl-tools
-      - name: Install clang
-        run: sudo apt-get install --yes --no-install-recommends clang
+        run: |
+          sudo apt-get install --yes --no-install-recommends musl-tools
+          sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0
         with:
