@@ -83,7 +83,7 @@ jobs:
         run: |
           mkdir -p target/x86_64-unknown-linux-musl/release
       - uses: shrink/actions-docker-extract@v3
-        if: matrix.platform.os_name != 'Linux-x86_64'
+        if: matrix.platform.os_name == 'x86_64-unknown-linux-musl'
         id: extract
         with:
           image: ${{ vars.DOCKERHUB_USER }}/${{ github.event.repository.name }}:musl
