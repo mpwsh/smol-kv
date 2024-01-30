@@ -50,6 +50,7 @@ jobs:
           sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
       - name: Build binary
         uses: houseabsolute/actions-rust-cross@v0
+        if: matrix.platform.target != 'x86_64-unknown-linux-musl'
         with:
           command: "build"
           target: ${{ matrix.platform.target }}
@@ -58,7 +59,7 @@ jobs:
           strip: true
       - name: Build x86_64 with docker
         uses: docker/build-push-action@v5
-        if: matrix.platform.os_name != 'Linux-x86_64'
+        if: matrix.platform.target == 'x86_64-unknown-linux-musl'
         with:
           context: .
           file: ./musl.Dockerfile
