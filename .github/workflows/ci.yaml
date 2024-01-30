@@ -89,7 +89,7 @@ jobs:
         with:
           image: ${{ github.event.repository.name }}:musl
           path: /app/${{ github.event.repository.name }}
-          destination: target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
+          destination: target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }}
       - name: Rename binary (linux and macos)
         run: mv target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }} target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
         if: matrix.platform.os_name != 'Windows-x86_64'
