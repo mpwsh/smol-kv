@@ -143,6 +143,6 @@ jobs:
           build-args: |
             GITHUB_ORG=${{ github.repository_owner }}
             GITHUB_REPO=${{ github.event.repository.name }}
-          tags: ${{ secrets.DOCKERHUB_ORGANISATION }}/${{ github.event.repository.name }}:${{ steps.latest-tag.outputs.tag }},${{ secrets.DOCKERHUB_ORGANISATION }}/${{ github.event.repository.name }}:latest
+          tags: ${{ vars.DOCKERHUB_USER }}/${{ github.event.repository.name }}:${{ steps.latest-tag.outputs.tag }},${{ vars.DOCKERHUB_USER }}/${{ github.event.repository.name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
