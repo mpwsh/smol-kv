@@ -67,7 +67,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
         with:
           endpoint: ci
-      - name: Build x86_64 with docker
+      - name: Build x86_64 binary with docker
         uses: docker/build-push-action@v5
         if: matrix.platform.target == 'x86_64-unknown-linux-musl'
         with:
@@ -88,7 +88,7 @@ jobs:
         with:
           image: ${{ vars.DOCKERHUB_USER }}/${{ github.event.repository.name }}:musl
           path: /app/${{ github.event.repository.name }}
-          destination: target/x86_64-unknown-linux-musl/release/github.event.repository.name
+          destination: target/x86_64-unknown-linux-musl/release/${{ github.event.repository.name }}
       - name: Rename binary (linux and macos)
         run: mv target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }} target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
         if: matrix.platform.os_name != 'Windows-x86_64'
