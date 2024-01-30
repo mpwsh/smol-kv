@@ -85,7 +85,7 @@ jobs:
           mkdir -p target/${{ matrix.platform.target }}/release
           docker image ls
           container_id=$(docker run -d ${{ github.event.repository.name }}:musl)
-          docker cp $container_id:/work/${{ github.event.repository.name }} target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }}
+          docker cp $container_id:/app/${{ github.event.repository.name }} target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }}
       - name: Rename binary (linux and macos)
         run: |
           ls -la target/${{ matrix.platform.target }}/release/
