@@ -82,14 +82,14 @@ jobs:
       - name: Create folder for musl binary
         if: matrix.platform.target == 'x86_64-unknown-linux-musl'
         run: |
-          mkdir -p target/x86_64-unknown-linux-musl/release
+          mkdir -p target/${{ matrix.platform.target }}/release
       - uses: shrink/actions-docker-extract@v3
         if: matrix.platform.target == 'x86_64-unknown-linux-musl'
         id: extract
         with:
           image: ${{ github.event.repository.name }}:musl
           path: /app/${{ github.event.repository.name }}
-          destination: target/x86_64-unknown-linux-musl/release/${{ github.event.repository.name }}
+          destination: target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
       - name: Rename binary (linux and macos)
         run: mv target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }} target/${{ matrix.platform.target }}/release/${{ matrix.platform.bin }}
         if: matrix.platform.os_name != 'Windows-x86_64'
