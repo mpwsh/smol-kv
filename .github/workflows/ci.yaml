@@ -60,8 +60,8 @@ jobs:
       - name: Setup docker context
         if: matrix.platform.target == 'x86_64-unknown-linux-musl'
         run: |
-             docker context create ci
-             docker context use ci
+          docker context create ci
+          docker context use ci
       - name: Set up Docker Buildx
         if: matrix.platform.target == 'x86_64-unknown-linux-musl'
         uses: docker/setup-buildx-action@v3
@@ -79,17 +79,13 @@ jobs:
           load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Create folder for musl binary
+      - name: Extract amd64 musl binary from image
         if: matrix.platform.target == 'x86_64-unknown-linux-musl'
         run: |
           mkdir -p target/${{ matrix.platform.target }}/release
-      - uses: shrink/actions-docker-extract@v3
-        if: matrix.platform.target == 'x86_64-unknown-linux-musl'
-        id: extract
-        with:
-          image: ${{ github.event.repository.name }}:musl
-          path: /app/${{ github.event.repository.name }}
-          destination: target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }}
+          docker image ls
+          container_id=$(docker run -d ${{ github.event.repository.name }}:musl)
+          docker cp $container_id:/work/${{ github.event.repository.name }} target/${{ matrix.platform.target }}/release/${{ github.event.repository.name }}
       - name: Rename binary (linux and macos)
         run: |
           ls -la target/${{ matrix.platform.target }}/release/
@@ -124,8 +120,8 @@ jobs:
         with:
           platforms: arm64
       - run: |
-             docker context create ci
-             docker context use ci
+          docker context create ci
+          docker context use ci
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
