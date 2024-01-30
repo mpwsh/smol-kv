@@ -75,7 +75,8 @@ jobs:
           file: ./musl.Dockerfile
           push: false
           platforms: linux/amd64
-          tags: ${{ vars.DOCKERHUB_USER }}/${{ github.event.repository.name }}:musl
+          tags: ${{ github.event.repository.name }}:musl
+          load: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Create folder for musl binary
@@ -86,7 +87,7 @@ jobs:
         if: matrix.platform.target == 'x86_64-unknown-linux-musl'
         id: extract
         with:
-          image: ${{ vars.DOCKERHUB_USER }}/${{ github.event.repository.name }}:musl
+          image: ${{ github.event.repository.name }}:musl
           path: /app/${{ github.event.repository.name }}
           destination: target/x86_64-unknown-linux-musl/release/${{ github.event.repository.name }}
       - name: Rename binary (linux and macos)
