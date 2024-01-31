@@ -7,7 +7,7 @@ Minimal working setup of Actix-web with RocksDB being used as a simple JSON KV s
 ```bash
 ❯ docker run -p 5050:5050 -e DATABASE_PATH=/rocksdb \
   -v $(pwd)/rocksdb:/rocksdb \
-  ghcr.io/mpwsh/smol-kv:amd64-latest #arm64-latest image also available
+  mpwsh/smol-kv:latest
 ```
 
 ## Build from source
@@ -27,6 +27,7 @@ PORT=5050
 WORKERS=4
 LOG_LEVEL=info
 DATABASE_PATH=./rocksdb
+ADMIN_TOKEN=yourtoken
 ```
 
 At this point you can run the binary and the server should start.
