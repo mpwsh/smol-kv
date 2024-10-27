@@ -55,7 +55,7 @@ jobs:
           command: "build"
           target: ${{ matrix.platform.target }}
           toolchain: ${{ matrix.toolchain }}
-          args: "--locked --release"
+          args: "--release"
           strip: true
       - name: Setup docker context
         if: matrix.platform.target == 'x86_64-unknown-linux-musl'
