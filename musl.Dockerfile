@@ -1,21 +1,51 @@
 FROM alpine:edge as build
 
 WORKDIR /app
-RUN apk --no-cache add rust cargo g++ openssl openssl-dev clang jq ca-certificates bash linux-headers clang16-libclang
 
+# Install build dependencies including build-base for full gcc toolchain
+RUN apk --no-cache add \
+    rust \
+    cargo \
+    build-base \
+    openssl \
+    openssl-dev \
+    clang \
+    clang16-libclang \
+    jq \
+    ca-certificates \
+    bash \
+    linux-headers \
+    cmake \
+    perl \
+    git \
+    zlib-dev \
+    bzip2-dev \
+    lz4-dev \
+    snappy-dev \
+    zstd-dev
+
+# Set environment variables for static linking
 ENV OPENSSL_STATIC=yes \
     PKG_CONFIG_ALLOW_CROSS=true \
     PKG_CONFIG_ALL_STATIC=true \
-    RUSTFLAGS="-C target-feature=+crt-static"
+    RUSTFLAGS="-C target-feature=+crt-static" \
+    CC=/usr/bin/gcc \
+    CXX=/usr/bin/g++ \
+    CFLAGS="-static" \
+    CXXFLAGS="-static"
 
-COPY Cargo.toml Cargo.toml
-COPY Cargo.lock Cargo.lock
+# Copy only dependency files first
+COPY Cargo.toml Cargo.lock ./
+
+# Now copy the real source code
 COPY src src
 
-
+# Build the application
 RUN cargo build --release --target x86_64-alpine-linux-musl
 
+# Create final minimal image
 FROM scratch
+
 WORKDIR /app
 ENV PATH=/app:${PATH}
 
