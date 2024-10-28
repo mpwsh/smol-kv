@@ -1,6 +1,7 @@
 mod benchmark;
 mod collection;
 mod key;
+mod error;
 pub use rocksdb_client as kv;
 
 #[actix_web::main]
