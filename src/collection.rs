@@ -16,8 +16,8 @@ pub struct RangeQuery {
     #[serde(default)]
     limit: Option<usize>,
     order: Option<SortOrder>,
-    #[serde(default)]
-    include_keys: bool,
+    #[serde(default = "def_true")]
+    keys: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -28,6 +28,9 @@ pub enum SortOrder {
     Descending,
 }
 
+fn def_true() -> bool {
+    true
+}
 pub async fn exists(name: Path<String>, db: Data<RocksDB>) -> HttpResponse {
     if db.cf_exists(&name) {
         HttpResponse::Ok().finish()
@@ -81,7 +84,7 @@ pub async fn list(
                 to,
                 query.limit.unwrap_or(usize::MAX),
                 direction,
-                query.include_keys,
+                query.keys,
             )
             .map_err(|e| ApiError::internal("Failed to fetch items", e))?;
 
