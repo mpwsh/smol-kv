@@ -1130,8 +1130,7 @@ dependencies = [
 
 [[package]]
 name = "rocksdb-client"
-version = "0.1.7"
-source = "git+https://github.com/mpwsh/rocksdb-client?branch=mpw/musl#18450ac8892e55ce714a6544206b432ef5bb271d"
+version = "0.1.11"
 dependencies = [
  "bytes",
  "hex",
@@ -1139,7 +1138,6 @@ dependencies = [
  "rocksdb",
  "serde",
  "serde_json",
- "sha1",
  "thiserror",
 ]
 
@@ -1269,7 +1267,7 @@ checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
 
 [[package]]
 name = "smol-kv"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "actix-web",
  "bytes",
