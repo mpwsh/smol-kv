@@ -1,11 +1,12 @@
 mod benchmark;
 mod collection;
-mod key;
 mod error;
+mod key;
 pub use rocksdb_client as kv;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
+    use actix_cors::Cors;
     use actix_web::{
         middleware::Logger,
         web::{delete, get, head, post, resource, scope, Data, JsonConfig, PayloadConfig},
@@ -20,7 +21,6 @@ async fn main() -> std::io::Result<()> {
         .unwrap_or("4".to_string())
         .parse::<usize>()
         .unwrap();
-
     let token = std::env::var("ADMIN_TOKEN").unwrap_or("supersecret".to_string());
     let db_path = std::env::var("DATABABASE_PATH").unwrap_or("./rocksdb".to_string());
     let log_level = std::env::var("LOG_LEVEL").unwrap_or("info".to_string());
@@ -36,11 +36,13 @@ async fn main() -> std::io::Result<()> {
     env_logger::init();
     log::info!("starting HTTP server at http://0.0.0.0:{port}");
     HttpServer::new(move || {
+        let cors = Cors::permissive();
         App::new()
             .app_data(Data::new(db.clone()))
             .app_data(Data::new(token.clone()))
             .app_data(JsonConfig::default().limit(1024 * 1024 * 50)) // 50 MB
             .app_data(PayloadConfig::new(1024 * 1024 * 50))
+            .wrap(cors)
             .wrap(Logger::default())
             .service(
                 scope("/api")
