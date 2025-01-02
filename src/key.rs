@@ -50,7 +50,7 @@ pub async fn post(
     };
 
     match db.insert_cf(&collection, &key, &obj) {
-        Ok(_) => Ok(HttpResponse::Ok().json(obj)),
+        Ok(_) => Ok(HttpResponse::Created().json(obj)),
         Err(KvStoreError::InvalidColumnFamily(_)) => Ok(HttpResponse::NotFound().finish()),
         Err(e) => Err(ApiError::internal("Failed to insert item", e)),
     }

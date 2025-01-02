@@ -1,6 +1,6 @@
 [package]
 name = "smol-kv"
-version = "0.2.2"
+version = "0.2.3"
 authors = ["mpw <x@mpw.sh>"]
 edition = "2021"
 
@@ -17,3 +17,4 @@ log = "0.4.22"
 rand = "0.8"
 hex = "0.4.3"
 num_cpus = "1.16.0"
+actix-cors = "0.7.0"
