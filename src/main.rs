@@ -22,7 +22,7 @@ async fn main() -> std::io::Result<()> {
         .parse::<usize>()
         .unwrap();
     let token = std::env::var("ADMIN_TOKEN").unwrap_or("supersecret".to_string());
-    let db_path = std::env::var("DATABABASE_PATH").unwrap_or("./rocksdb".to_string());
+    let db_path = std::env::var("DATABASE_PATH").unwrap_or("./rocksdb".to_string());
     let log_level = std::env::var("LOG_LEVEL").unwrap_or("info".to_string());
 
     let opts = config_db();
@@ -34,6 +34,7 @@ async fn main() -> std::io::Result<()> {
         format!("{0},actix_web={0},actix_server={0}", log_level),
     );
     env_logger::init();
+    log::info!("Using database path {db_path}");
     log::info!("starting HTTP server at http://0.0.0.0:{port}");
     HttpServer::new(move || {
         let cors = Cors::permissive();
