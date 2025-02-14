@@ -4,16 +4,11 @@ use serde::Serialize;
 use std::fmt;
 
 #[derive(Debug, Serialize)]
-struct ErrorResponse {
-    error: String,
-    details: Option<String>,
-}
-
-#[derive(Debug)]
 pub struct ApiError {
-    status: StatusCode,
+    #[serde(rename = "error")]
     message: String,
-    details: Option<String>,
+    #[serde(skip)]
+    status: StatusCode,
 }
 
 impl fmt::Display for ApiError {
@@ -28,20 +23,23 @@ impl ResponseError for ApiError {
     }
 
     fn error_response(&self) -> HttpResponse {
-        HttpResponse::build(self.status).json(ErrorResponse {
-            error: self.message.clone(),
-            details: self.details.clone(),
-        })
+        HttpResponse::build(self.status).json(self)
     }
 }
 
 impl ApiError {
-    pub fn internal(message: impl Into<String>, details: impl fmt::Debug) -> Self {
-        error!("Internal error: {:?}", details);
+    pub fn internal(context: impl fmt::Display, err: impl fmt::Debug) -> Self {
+        error!("{}: {:?}", context, err);
         Self {
+            message: format!("{context}"),
             status: StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        Self {
             message: message.into(),
-            details: Some(format!("{details:?}")),
+            status: StatusCode::UNAUTHORIZED,
         }
     }
 }

@@ -1,17 +1,21 @@
+mod auth;
 mod benchmark;
 mod collection;
 mod error;
-mod key;
+pub mod key;
+mod middleware;
+use crate::kv::KVStore;
 pub use rocksdb_client as kv;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use actix_cors::Cors;
     use actix_web::{
-        middleware::Logger,
-        web::{delete, get, head, post, resource, scope, Data, JsonConfig, PayloadConfig},
+        middleware::{from_fn, Logger},
+        web::{delete, get, head, post, put, resource, scope, Data, JsonConfig, PayloadConfig},
         App, HttpServer,
     };
+    const SECRETS_CF: &str = "secrets";
 
     let port = std::env::var("PORT")
         .unwrap_or("5050".to_string())
@@ -28,6 +32,13 @@ async fn main() -> std::io::Result<()> {
     let opts = config_db();
     let db: kv::RocksDB =
         kv::KVStore::open_with_existing_cfs(&opts, &db_path).expect("Failed to open database");
+    db.create_cf("secrets")
+        .expect("Unable to create secrets collection");
+
+    if !db.cf_exists(SECRETS_CF) {
+        db.create_cf(SECRETS_CF)
+            .expect("Failed to create required secrets collection - cannot start server");
+    }
 
     std::env::set_var(
         "RUST_LOG",
@@ -47,18 +58,20 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .service(
                 scope("/api")
+                    .wrap(from_fn(middleware::require_auth))
                     .service(
                         resource("/{name}")
                             .route(head().to(collection::exists))
                             .route(delete().to(collection::drop))
-                            .route(post().to(collection::create))
-                            .route(get().to(collection::list)),
+                            .route(put().to(collection::create))
+                            .route(get().to(collection::list))
+                            .route(post().to(collection::query)),
                     )
                     .service(
                         resource("/{collection}/{key}")
                             .route(get().to(key::get))
-                            .route(head().to(key::head))
-                            .route(post().to(key::post))
+                            .route(head().to(key::exists))
+                            .route(put().to(key::create))
                             .route(delete().to(key::delete)),
                     ),
             )
@@ -101,6 +114,10 @@ fn config_db() -> kv::Options {
     opts.set_allow_mmap_reads(true);
     opts.set_allow_mmap_writes(false); // mmap writes can be dangerous
     opts.set_max_total_wal_size(256 * 1024 * 1024); // 256MB max WAL size
+                                                    //
+    opts.set_level_compaction_dynamic_level_bytes(true); // Better for varying workloads
+    opts.set_optimize_filters_for_hits(true); // Good for read-heavy workloads
+    opts.set_report_bg_io_stats(true); // Helpful for monitoring
 
     // Cache settings
     let cache_size = 1024 * 1024 * 1024; // 1GB cache

@@ -9,7 +9,7 @@ use actix_web::{
 use bytes::Bytes;
 use serde_json::Value;
 
-pub async fn head(
+pub async fn exists(
     path: Path<(String, String)>,
     db: Data<RocksDB>,
 ) -> Result<HttpResponse, ApiError> {
@@ -37,7 +37,7 @@ pub async fn get(
     }
 }
 
-pub async fn post(
+pub async fn create(
     path: Path<(String, String)>,
     db: Data<RocksDB>,
     body: Bytes,
@@ -46,7 +46,11 @@ pub async fn post(
 
     let obj = match serde_json::from_slice::<Value>(&body) {
         Ok(obj) => obj,
-        Err(_) => return Ok(HttpResponse::BadRequest().finish()),
+        Err(_) => {
+            return Ok(
+                HttpResponse::BadRequest().body("Parsing failed. value is not in JSON Format")
+            )
+        }
     };
 
     match db.insert_cf(&collection, &key, &obj) {
