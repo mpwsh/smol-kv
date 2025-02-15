@@ -4,8 +4,10 @@ mod collection;
 mod error;
 pub mod key;
 mod middleware;
+mod sub;
 use crate::kv::KVStore;
 pub use rocksdb_client as kv;
+use std::sync::Arc;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -29,6 +31,7 @@ async fn main() -> std::io::Result<()> {
     let db_path = std::env::var("DATABASE_PATH").unwrap_or("./rocksdb".to_string());
     let log_level = std::env::var("LOG_LEVEL").unwrap_or("info".to_string());
 
+    let sub_manager = Arc::new(sub::SubscriptionManager::new());
     let opts = config_db();
     let db: kv::RocksDB =
         kv::KVStore::open_with_existing_cfs(&opts, &db_path).expect("Failed to open database");
@@ -52,6 +55,7 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(Data::new(db.clone()))
             .app_data(Data::new(token.clone()))
+            .app_data(Data::new(sub_manager.clone()))
             .app_data(JsonConfig::default().limit(1024 * 1024 * 50)) // 50 MB
             .app_data(PayloadConfig::new(1024 * 1024 * 50))
             .wrap(cors)
@@ -66,6 +70,10 @@ async fn main() -> std::io::Result<()> {
                             .route(put().to(collection::create))
                             .route(get().to(collection::list))
                             .route(post().to(collection::query)),
+                    )
+                    .service(resource("/{collection}/_batch").route(put().to(key::create_batch)))
+                    .service(
+                        resource("/{collection}/_subscribe").route(get().to(collection::subscribe)),
                     )
                     .service(
                         resource("/{collection}/{key}")
@@ -85,43 +93,36 @@ async fn main() -> std::io::Result<()> {
 
 fn config_db() -> kv::Options {
     let mut opts = kv::Options::default();
-
-    // Basic options
     opts.create_if_missing(true);
     opts.create_missing_column_families(true);
+    opts.set_enable_pipelined_write(true); // CRUCIAL for write performance
 
-    // Write performance
-    opts.set_write_buffer_size(256 * 1024 * 1024); // 256MB write buffer
-    opts.set_max_write_buffer_number(6); // Allow more write buffers
-    opts.set_min_write_buffer_number_to_merge(2);
+    // CRANK these write settings
+    opts.set_write_buffer_size(64 * 1024 * 1024); // smaller buffers, more frequent flushes
+    opts.set_max_write_buffer_number(8); // more buffers in memory
+    opts.set_min_write_buffer_number_to_merge(1); // don't wait to merge, flush immediately
+    opts.set_unordered_write(false); // trade consistency for speed
+    opts.set_allow_concurrent_memtable_write(true);
 
-    // Read performance
-    opts.set_max_open_files(-1); // Keep all files open, good for production
-    opts.set_use_direct_io_for_flush_and_compaction(true);
-    opts.set_use_direct_reads(false);
-
-    // Parallelism
+    // parallel everything
     let cpu_cores = num_cpus::get() as i32;
     opts.increase_parallelism(cpu_cores);
     opts.set_max_background_jobs(cpu_cores * 2);
 
-    // Compaction settings
-    opts.set_level_zero_file_num_compaction_trigger(4);
-    opts.set_target_file_size_base(128 * 1024 * 1024); // 128MB
-    opts.set_max_bytes_for_level_base(512 * 1024 * 1024); // 512MB
+    // minimize compaction impact
+    opts.set_level_zero_file_num_compaction_trigger(8); // wait longer before compacting
+    opts.set_level_zero_slowdown_writes_trigger(20); // allow more L0 files
+    opts.set_level_zero_stop_writes_trigger(40); // really allow more L0 files
 
-    // Memory settings
-    opts.set_allow_mmap_reads(true);
-    opts.set_allow_mmap_writes(false); // mmap writes can be dangerous
-    opts.set_max_total_wal_size(256 * 1024 * 1024); // 256MB max WAL size
-                                                    //
-    opts.set_level_compaction_dynamic_level_bytes(true); // Better for varying workloads
-    opts.set_optimize_filters_for_hits(true); // Good for read-heavy workloads
-    opts.set_report_bg_io_stats(true); // Helpful for monitoring
+    // DISABLE stuff we don't need
+    opts.set_use_direct_io_for_flush_and_compaction(false); // let the OS handle this
+    opts.set_use_direct_reads(false);
+    opts.set_allow_mmap_reads(false);
+    opts.set_allow_mmap_writes(false);
 
-    // Cache settings
-    let cache_size = 1024 * 1024 * 1024; // 1GB cache
-    opts.optimize_for_point_lookup(cache_size);
+    // reduce WAL overhead
+    opts.set_manual_wal_flush(true); // manual WAL flush for batching
+    opts.set_wal_bytes_per_sync(0); // disable WAL syncing}
 
     opts
 }

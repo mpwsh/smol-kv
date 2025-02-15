@@ -2,7 +2,13 @@ use crate::{
     auth::*,
     error::ApiError,
     kv::{Direction, KVStore, KvStoreError, RocksDB},
+    sub::*,
 };
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+
 use actix_web::{
     web::{Data, Path, Query},
     HttpRequest, HttpResponse,
@@ -237,4 +243,41 @@ pub async fn query(
     results.truncate(limit);
 
     Ok(HttpResponse::Ok().json(results))
+}
+
+pub async fn subscribe(
+    path: Path<String>,
+    sub_manager: Data<Arc<SubscriptionManager>>,
+) -> Result<HttpResponse, ApiError> {
+    let collection = path.into_inner();
+    let sender = sub_manager.get_or_create_channel(&collection).await;
+    let mut receiver = sender.subscribe();
+
+    let stream = async_stream::stream! {
+        while let Ok(event) = receiver.recv().await {
+            // Create new event with timestamp
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+
+            // Convert event to Value, add timestamp, convert back
+            let mut event_json = serde_json::to_value(&event)?;
+            if let Some(value) = event_json.get_mut("value") {
+                if let Some(obj) = value.as_object_mut() {
+                    obj.insert("serverTime".to_string(), serde_json::json!(timestamp));
+                }
+            }
+
+            yield Ok::<_, actix_web::Error>(Bytes::from(format!("data: {}\n\n",
+                serde_json::to_string(&event_json).unwrap_or_default()
+            )));
+        }
+    };
+
+    Ok(HttpResponse::Ok()
+        .insert_header(("Content-Type", "text/event-stream"))
+        .insert_header(("Cache-Control", "no-cache"))
+        .insert_header(("Connection", "keep-alive"))
+        .streaming(stream))
 }

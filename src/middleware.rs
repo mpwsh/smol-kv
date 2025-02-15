@@ -55,6 +55,10 @@ pub async fn require_auth(
         return next.call(req).await;
     }
 
+    if req.method() == Method::GET && path.split('/').count() == 4 {
+        return next.call(req).await;
+    }
+
     let is_authenticated = auth::verify_admin_token(req.headers(), admin_token)
         || auth::verify_collection_secret(req.headers(), db, collection_name)?;
 
