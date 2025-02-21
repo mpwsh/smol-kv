@@ -71,7 +71,9 @@ async fn main() -> std::io::Result<()> {
                             .route(get().to(collection::list))
                             .route(post().to(collection::query)),
                     )
-                    .service(resource("/{collection}/_batch").route(put().to(key::create_batch)))
+                    .service(
+                        resource("/{collection}/_batch").route(put().to(collection::create_batch)),
+                    )
                     .service(
                         resource("/{collection}/_subscribe").route(get().to(collection::subscribe)),
                     )

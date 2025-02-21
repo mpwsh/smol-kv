@@ -2,12 +2,19 @@ import http from "k6/http";
 import { sleep } from "k6";
 import { randomIntBetween, randomItem } from "https://jslib.k6.io/k6-utils/1.2.0/index.js";
 
+// Configuration
+const BASE_URL = "http://localhost:5050"
+const MATCH_ID = "bench";
+const HEADERS = { 
+  "X-SECRET-KEY": "testing"
+};
+
 export let options = {
   scenarios: {
     game_simulation: {
       executor: 'constant-vus',
       vus: 50,
-      duration: '1m', // Increased duration
+      duration: '1m',
     },
   },
 };
@@ -54,58 +61,70 @@ function generateRandomPlayerData(playerId) {
   };
 }
 
-export default function () {
-  const playerId = parseInt(__VU);
-  const matchId = "bench";
-  const headers = { 
-    "X-SECRET-KEY": "testing"
-  };
-
-  // Setup collection only ONCE per VU
-  if (__ITER === 0) {
-    const createResp = http.put(
-      `http://127.0.0.1:5050/api/${matchId}`,
-      null,
-      { headers }
-    );
+// Setup function runs once before the test starts
+export function setup() {
+  const createResp = http.put(
+    `${BASE_URL}/api/${MATCH_ID}`,
+    null,
+    { headers: HEADERS }
+  );
+  
+  if (createResp.status !== 201) {
+    console.error(`Failed to create collection: ${createResp.status}`);
+    // We don't throw an error here because we want the benchmark to continue
   }
+}
 
+// Default function contains the core benchmark logic
+export default function () {
+    const BATCH_SIZE = 50;  // assuming 50 VUs, we'll send all at once
+    const startTime = new Date().getTime();
+    
+    // if we're VU #1, we'll handle the batch write for everyone
+    if (__VU === 1) {
+        const batchData = [];
+        
+        // generate data for all players
+        for (let i = 1; i <= BATCH_SIZE; i++) {
+            batchData.push({
+                key: i.toString(),
+                value: generateRandomPlayerData(i)
+            });
+        }
 
-  const startTime = new Date().getTime();
+        // send the batch
+        const writeResp = http.put(
+            `${BASE_URL}/api/${MATCH_ID}/_batch`,
+            JSON.stringify(batchData),
+            { headers: HEADERS }
+        );
 
-  // write player data - check response
-  const playerData = generateRandomPlayerData(playerId);
-  const writeResp = http.put(
-    `http://127.0.0.1:5050/api/${matchId}/${playerId}`,
-    JSON.stringify(playerData),
-    { headers }
-  );
-    if (writeResp.status !== 201) {
-      console.error(`Failed to write player data: ${writeResp.status}`);
+        if (writeResp.status !== 201) {
+            console.error(`Failed to write batch data: ${writeResp.status}`);
+        }
     }
 
-
-  // query - check response
-  const randomQuery = randomItem(queryTypes);
-  const queryBody = {
-    keys: true,
-    limit: 10,
-    query: randomQuery.query
-  };
-
-  const queryResp = http.post(
-    `http://127.0.0.1:5050/api/${matchId}`,
-    JSON.stringify(queryBody),
-    {headers},
-  );
-    if (queryResp.status !== 200) {
-      console.error(`Failed to query: ${queryResp.status}`);
-    }
-
-
-  const endTime = new Date().getTime();
-  const executionTime = endTime - startTime;
+    // everyone still does queries
+    const randomQuery = randomItem(queryTypes);
+    const queryBody = {
+        keys: true,
+        limit: 10,
+        query: randomQuery.query
+    };
    
-  const sleepTime = Math.max(0, 7.8125 - executionTime);
-  sleep(sleepTime / 1000);
+    /*
+    const queryResp = http.post(
+        `${BASE_URL}/api/${MATCH_ID}`,
+        JSON.stringify(queryBody),
+        { headers: HEADERS },
+    );
+
+    if (queryResp.status !== 200) {
+        console.error(`Failed to query: ${queryResp.status}`);
+    }*/
+
+    const endTime = new Date().getTime();
+    const executionTime = endTime - startTime;
+    const sleepTime = Math.max(0, 7.8125 - executionTime);
+    sleep(sleepTime / 1000);
 }

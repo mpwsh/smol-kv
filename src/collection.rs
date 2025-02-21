@@ -4,6 +4,7 @@ use crate::{
     kv::{Direction, KVStore, KvStoreError, RocksDB},
     sub::*,
 };
+
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -20,6 +21,11 @@ use serde_json::Value;
 
 use bytes::Bytes;
 
+#[derive(Deserialize, Serialize)]
+struct BatchItem {
+    key: String,
+    value: Value,
+}
 #[derive(Debug, Deserialize, Clone)]
 pub struct RangeQuery {
     pub from: Option<String>,
@@ -56,6 +62,15 @@ pub enum SortOrder {
     Ascending,
     #[serde(rename = "desc")]
     Descending,
+}
+
+impl From<SortOrder> for Direction {
+    fn from(order: SortOrder) -> Self {
+        match order {
+            SortOrder::Ascending => Direction::Forward,
+            SortOrder::Descending => Direction::Reverse,
+        }
+    }
 }
 
 fn def_true() -> bool {
@@ -160,16 +175,8 @@ pub async fn query(
     if !db.cf_exists(&collection) {
         return Ok(HttpResponse::NotFound().finish());
     }
-    // If we have a body, try to parse it as a ListRequest
-    let list_request = if let Some(body) = body {
-        match serde_json::from_slice::<ListRequest>(&body) {
-            Ok(req) => Some(req),
-            Err(_) => return Ok(HttpResponse::BadRequest().body("Invalid request body format")),
-        }
-    } else {
-        None
-    };
 
+    let list_request: Option<ListRequest> = body.and_then(|b| serde_json::from_slice(&b).ok());
     let range_query = list_request
         .as_ref()
         .and_then(|req| req.range.as_ref())
@@ -177,74 +184,63 @@ pub async fn query(
         .cloned()
         .unwrap_or_default();
 
-    let from = range_query.from.as_deref().unwrap_or("");
-    let to = range_query.to.as_deref().unwrap_or("\u{fff0}");
-    let direction = match range_query.order.clone().unwrap_or(SortOrder::Ascending) {
-        SortOrder::Ascending => Direction::Forward,
-        SortOrder::Descending => Direction::Reverse,
-    };
-    let limit = range_query.limit.unwrap_or(usize::MAX);
-
-    // Get base results - either filtered or all
-    let mut results = if let Some(query) = list_request.and_then(|req| req.query) {
-        let filtered = db
-            .as_ref()
-            .query_cf::<Value>(&collection, &query.to_string())
-            .map_err(|e| ApiError::internal("Failed to query items", e))?;
-
-        if range_query.keys {
-            let all_with_keys = db
-                .get_range_cf::<Value>(
-                    &collection,
-                    "",
-                    "\u{fff0}",
-                    usize::MAX,
-                    Direction::Forward,
-                    true,
-                )
-                .map_err(|e| ApiError::internal("Failed to fetch items", e))?;
-
-            all_with_keys
-                .into_iter()
-                .filter(|keyed_item| {
-                    filtered
-                        .iter()
-                        .any(|f| f == keyed_item.get("value").unwrap())
-                })
-                .collect()
-        } else {
-            filtered
-        }
+    let results = if let Some(query) = list_request.and_then(|req| req.query) {
+        let query_str = match query {
+            Value::String(s) => s,
+            _ => query.to_string(),
+        };
+        db.query_cf::<Value>(&collection, &query_str, range_query.keys)?
     } else {
-        // No query - get all items with requested range params
-        db.get_range_cf::<Value>(&collection, from, to, limit, direction, range_query.keys)
-            .map_err(|e| ApiError::internal("Failed to fetch items", e))?
+        db.get_range_cf::<Value>(
+            &collection,
+            range_query.from.as_deref().unwrap_or(""),
+            range_query.to.as_deref().unwrap_or("\u{fff0}"),
+            range_query.limit.unwrap_or(usize::MAX),
+            range_query
+                .order
+                .map(Into::into)
+                .unwrap_or(Direction::Forward),
+            range_query.keys,
+        )?
     };
-
-    // Apply numeric range if specified
-    if let (Ok(from_idx), Ok(to_idx)) = (
-        range_query.from.as_deref().unwrap_or("0").parse::<usize>(),
-        range_query
-            .to
-            .as_deref()
-            .unwrap_or(&results.len().to_string())
-            .parse::<usize>(),
-    ) {
-        let start = from_idx.min(results.len());
-        let end = (to_idx + 1).min(results.len());
-        results = results[start..end].to_vec();
-    }
-
-    // Apply direction and limit
-    match direction {
-        Direction::Reverse => results.reverse(),
-        Direction::Forward => {}
-    }
-    results.truncate(limit);
 
     Ok(HttpResponse::Ok().json(results))
 }
 
+pub async fn create_batch(
+    path: Path<String>,
+    db: Data<RocksDB>,
+    sub_manager: Data<Arc<SubscriptionManager>>,
+    body: Bytes,
+) -> Result<HttpResponse, ApiError> {
+    let collection = path.into_inner();
+    let items: Vec<BatchItem> = match serde_json::from_slice(&body) {
+        Ok(items) => items,
+        Err(_) => return Ok(HttpResponse::BadRequest().body("Invalid JSON batch format")),
+    };
+
+    let batch_items: Vec<(&str, &Value)> = items
+        .iter()
+        .map(|item| (item.key.as_str(), &item.value))
+        .collect();
+
+    match db.batch_insert_cf(&collection, &batch_items) {
+        Ok(_) => {
+            // Notify subscribers for each item in the batch
+            for item in &items {
+                let event = CollectionEvent {
+                    operation: "create".to_string(),
+                    key: item.key.clone(),
+                    value: item.value.clone(),
+                };
+                sub_manager.publish(&collection, event).await;
+            }
+            Ok(HttpResponse::Created().json(items))
+        }
+        Err(KvStoreError::InvalidColumnFamily(_)) => Ok(HttpResponse::NotFound().finish()),
+        Err(e) => Err(ApiError::internal("Failed to insert batch", e)),
+    }
+}
 pub async fn subscribe(
     path: Path<String>,
     sub_manager: Data<Arc<SubscriptionManager>>,
@@ -269,9 +265,9 @@ pub async fn subscribe(
                 }
             }
 
-            yield Ok::<_, actix_web::Error>(Bytes::from(format!("data: {}\n\n",
+            yield Ok::<_, actix_web::Error>(Bytes::from(
                 serde_json::to_string(&event_json).unwrap_or_default()
-            )));
+            ));
         }
     };
 

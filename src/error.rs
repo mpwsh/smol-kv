@@ -1,3 +1,4 @@
+use crate::kv::KvStoreError;
 use actix_web::{http::StatusCode, HttpResponse, ResponseError};
 use log::error;
 use serde::Serialize;
@@ -24,6 +25,12 @@ impl ResponseError for ApiError {
 
     fn error_response(&self) -> HttpResponse {
         HttpResponse::build(self.status).json(self)
+    }
+}
+
+impl From<KvStoreError> for ApiError {
+    fn from(err: KvStoreError) -> Self {
+        ApiError::internal("Database operation failed", err)
     }
 }
 
