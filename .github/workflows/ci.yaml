@@ -29,11 +29,11 @@ jobs:
             bin: ${{ github.event.repository.name }}-amd64-linux-musl
           - os_name: Linux-aarch64
             os: ubuntu-22.04
-            target: aarch64-unknown-linux
+            target: aarch64-unknown-linux-gnu
             bin: ${{ github.event.repository.name }}-arm64-linux
           - os_name: Linux-x86_64
             os: ubuntu-22.04
-            target: x86_64-unknown-linux
+            target: x86_64-unknown-linux-gnu
             bin: ${{ github.event.repository.name }}-amd64-linux
           - os_name: Windows-x86_64
             os: windows-latest
@@ -48,7 +48,7 @@ jobs:
             target: aarch64-apple-darwin
             bin: ${{ github.event.repository.name }}-arm64-darwin
         toolchain:
-          - stable
+          - 1.82.0
     steps:
       - uses: actions/checkout@v3
 
