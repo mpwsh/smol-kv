@@ -3,7 +3,7 @@ RUN cargo install cargo-chef --locked
 
 WORKDIR /app
 RUN apt-get update -y && \
-  apt-get install -y --no-install-recommends clang && \
+  apt-get install -y --no-install-recommends clang pkg-config libclang-dev && \
   rm -rf /var/lib/apt/lists/*
 
 FROM chef AS planner

@@ -50,7 +50,7 @@ jobs:
         toolchain:
           - 1.82.0
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Install Linux musl-tools
         if: contains(matrix.platform.target, 'musl')
@@ -64,8 +64,7 @@ jobs:
         with:
           command: "build"
           target: ${{ matrix.platform.target }}
-          toolchain: ${{ matrix.toolchain }}
-          args: "--release"
+          args: "--locked --release"
           strip: true
 
       - name: Setup docker context
@@ -128,7 +127,7 @@ jobs:
     needs: build
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Login to Docker Hub
         uses: docker/login-action@v2
