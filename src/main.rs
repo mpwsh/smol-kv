@@ -8,6 +8,7 @@ mod sub;
 use crate::kv::KVStore;
 pub use rocksdb_client as kv;
 use std::sync::Arc;
+pub const SECRETS_CF: &str = "secrets";
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -17,7 +18,6 @@ async fn main() -> std::io::Result<()> {
         web::{delete, get, head, post, put, resource, scope, Data, JsonConfig, PayloadConfig},
         App, HttpServer,
     };
-    const SECRETS_CF: &str = "secrets";
 
     let port = std::env::var("PORT")
         .unwrap_or("5050".to_string())
@@ -30,25 +30,25 @@ async fn main() -> std::io::Result<()> {
     let token = std::env::var("ADMIN_TOKEN").unwrap_or("supersecret".to_string());
     let db_path = std::env::var("DATABASE_PATH").unwrap_or("./rocksdb".to_string());
     let log_level = std::env::var("LOG_LEVEL").unwrap_or("info".to_string());
-
-    let sub_manager = Arc::new(sub::SubscriptionManager::new());
-    let opts = config_db();
-    let db: kv::RocksDB =
-        kv::KVStore::open_with_existing_cfs(&opts, &db_path).expect("Failed to open database");
-    db.create_cf("secrets")
-        .expect("Unable to create secrets collection");
-
-    if !db.cf_exists(SECRETS_CF) {
-        db.create_cf(SECRETS_CF)
-            .expect("Failed to create required secrets collection - cannot start server");
-    }
-
     std::env::set_var(
         "RUST_LOG",
         format!("{0},actix_web={0},actix_server={0}", log_level),
     );
     env_logger::init();
     log::info!("Using database path {db_path}");
+    let sub_manager = Arc::new(sub::SubscriptionManager::new());
+    let opts = config_db();
+    let db: kv::RocksDB =
+        kv::KVStore::open_with_existing_cfs(&opts, &db_path).expect("Failed to open database");
+
+    if !db.cf_exists(SECRETS_CF) {
+        db.create_cf(SECRETS_CF)
+            .expect("Failed to create required secrets collection - cannot start server");
+        log::info!("Initialized secrets collection");
+    } else {
+        log::info!("CF Secrets exists")
+    };
+
     log::info!("starting HTTP server at http://0.0.0.0:{port}");
     HttpServer::new(move || {
         let cors = Cors::permissive();

@@ -1,6 +1,6 @@
 [package]
 name = "smol-kv"
-version = "0.3.1"
+version = "0.3.3"
 authors = ["mpw <x@mpw.sh>"]
 edition = "2021"
 
@@ -20,7 +20,30 @@ num_cpus = "1.16.0"
 actix-cors = "0.7.0"
 ring = "0.17.8"
 nanoid = "0.4.0"
-chrono = "0.4.39"
+chrono =  {version = "0.4.39", features = ["serde"]}
 tokio = "1.43.0"
 futures-util = "0.3.31"
 async-stream = "0.3.6"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+
+[profile.debug-opt]
+inherits = "release"
+debug = 2
+debug-assertions = true
+incremental = true
+
+[profile.deploy]
+inherits = "release"
+strip = "symbols"
+
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+
+#[profile.release]
+#debug = true

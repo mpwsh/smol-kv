@@ -3,6 +3,7 @@ use crate::{
     error::ApiError,
     kv::{Direction, KVStore, KvStoreError, RocksDB},
     sub::*,
+    SECRETS_CF,
 };
 
 use std::{
@@ -105,19 +106,17 @@ pub async fn create(
         db.create_cf(&name)
             .map_err(|e| ApiError::internal("Failed to create collection", e))?;
 
-        db.insert_cf(
-            "secrets",
-            &name,
-            &serde_json::json!({
-                "created_at": timestamp,
-                "secret": hash_secret_key(&secret_key)
-            }),
-        )
-        .map_err(|e| match e {
-            KvStoreError::InvalidColumnFamily(_) => Ok(HttpResponse::NotFound().finish()),
-            _ => Err(ApiError::internal("Failed to insert item", e)),
-        })
-        .unwrap();
+        let secret = Secret {
+            created_at: timestamp,
+            secret: hash_secret_key(&secret_key),
+        };
+
+        db.insert_cf(SECRETS_CF, &name, &secret)
+            .map_err(|e| match e {
+                KvStoreError::InvalidColumnFamily(_) => Ok(HttpResponse::NotFound().finish()),
+                _ => Err(ApiError::internal("Failed to insert item", e)),
+            })
+            .unwrap();
 
         log::info!("Created collection {name}");
 
