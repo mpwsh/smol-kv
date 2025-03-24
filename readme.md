@@ -1,6 +1,11 @@
+# Smol-KV
+
 ## Description
 
-Minimal working setup of Actix-web with RocksDB being used as a simple JSON KV store or cache.
+smolkv is a lightweight JSON document store built with actix-web using RocksDB as storage layer.
+A [CLI](https://github.com/mpwsh/smolkv-client/blob/main/examples/cli.rs) and HTTP [client library](https://github.com/mpwsh/smolkv-client) is also available for programatic use. Access to rocksDB internals is provided by [this library](https://github.com/mpwsh/rocksdb-client).
+
+Use at your own risk, im not responsible for any kind of dataloss caused by my sloppy code.
 
 ## Quick Start
 
@@ -9,6 +14,8 @@ Minimal working setup of Actix-web with RocksDB being used as a simple JSON KV s
   -v $(pwd)/rocksdb:/rocksdb \
   mpwsh/smol-kv:latest
 ```
+
+If you used this step jump directly to Usage.
 
 ## Build from source
 
@@ -20,7 +27,7 @@ Minimal working setup of Actix-web with RocksDB being used as a simple JSON KV s
 
 ## Configuration
 
-Set the following env vars to configure the server (optional)
+You can use the following env vars to configure the server (optional)
 
 ```bash
 PORT=5050
@@ -37,14 +44,11 @@ At this point you can run the binary and the server should start.
 ### Create a collection
 
 ```bash
-❯ curl -X PUT localhost:5050/api/mycollection
-```
-
-### Get value
-
-```bash
-❯ curl -i -X GET -H "Content-Type: application/json" http://localhost:5050/api/mycollection/yourkey
-# Returns error 404 if key was not found.
+curl -sX PUT localhost:5050/api/mycollection
+{"message":"Collection mycollection created","secret_key":"<generated-secret-key>"}
+# You can also provide your own to avoid random secret generation
+curl -sX PUT -H "X-SECRET-KEY: verysecure" localhost:5050/api/mycollection
+{"message":"Collection mycollection created","secret_key":"verysecure"}
 ```
 
 ### Create new key with value
@@ -52,87 +56,125 @@ At this point you can run the binary and the server should start.
 Value needs to be in valid UTF-8 and in JSON format, parsing will fail otherwise.
 
 ```bash
-❯ curl -X PUT -H "Content-Type: application/json" -d '{"name":"test"}' http://localhost:5050/api/mycollection/yourkey
+curl -sX PUT -H "X-SECRET-KEY: verysecure" -d '{"name":"test", "age": 10}' http://localhost:5050/api/mycollection/test
 # output
-{"name":"test"}
+{"name":"test", "age": 10}
 ```
 
-Hitting `http://localhost:5050/api/yourkey` with a `GET` request should output the value now instead of responding with 404.
+### Retrieve a value
 
 ```bash
-❯ curl http://localhost:5050/api/mycollection/yourkey
-{"name":"test"}
+curl -H "X-SECRET-KEY: verysecure" http://localhost:5050/api/mycollection/test
+{"name":"test", "age": 10}
 ```
 
-### Trying invalid json
+### Batch Operations
 
 ```bash
-❯ curl -X PUT -H "Content-Type: application/json" -d 'invalid' http://localhost:5050/api/mycollection/wontwork
-# output
-Parsing failed. value is not in JSON Format
-# No data was saved
+# With Specific Key/Values
+curl -X PUT -H "X-SECRET-KEY: verysecure" -H "Content-Type: application/json" \
+  -d '[
+    {"key": "user1", "value": {"name": "Alice", "age": 30}},
+    {"key": "user2", "value": {"name": "Bob", "age": 25}},
+    {"key": "user3", "value": {"name": "Charlie", "age": 35}}
+  ]' \
+  http://localhost:5050/api/mycollection/_batch
+```
+
+Batch import values with keys from JSON File. Using [Earth Meteorite Landings](https://data.nasa.gov/resource/y77d-th95.json) dataset.
+
+```bash
+# Create the collection 
+curl -sX PUT -H "X-SECRET-KEY: verysecure" localhost:5050/api/landings
+# import the values using a property from the json file as key
+curl -X POST -F "file=@y77d-th95.json" -H "X-SECRET-KEY: verysecure" "http://localhost:5050/api/landings/_import?key=name"
+{"message":"Successfully imported 1000 items","imported_count":1000,"collection":"mycollection","errors":null}
+```
+
+### List a collection
+
+```bash
+curl -H "X-SECRET-KEY: verysecure" http://localhost:5050/api/mycollection
+[{"key":"test","value":{"age":10,"name":"test"}},{"key":"user1","value":{"age":30,"name":"Alice"}},{"key":"user2","value":{"age":25,"name":"Bob"}},{"key":"user3","value":{"age":35,"name":"Charlie"}}]
+
+# Get values without keys
+curl -H "X-SECRET-KEY: verysecure" http://localhost:5050/api/mycollection?keys=false
+[{"age":10,"name":"test"},{"age":30,"name":"Alice"},{"age":25,"name":"Bob"},{"age":35,"name":"Charlie"}]
+# Other available query parameters for list -- from,to,limit,order
+curl -H "X-SECRET-KEY: verysecure" "http://localhost:5050/api/mycollection?keys=false&limit=1&order=desc"
+[{"age":35,"name":"Charlie"}]
+```
+
+### JSONPath Queries
+
+```bash
+# Find users over 25 years old
+curl -X POST -H "X-SECRET-KEY: verysecure" -H "Content-Type: application/json" \
+  -d '{"query": "$[?@.age>25]"}' \
+  http://localhost:5050/api/mycollection
+
+# Combine multiple conditions
+curl -X POST -H "X-SECRET-KEY: verysecure" -H "Content-Type: application/json" -d '{"query": "$[?@.age>25&&@.name==\"Alice\"]"}'   http://localhost:5050/api/mycollection
+[{"key":"user1","value":{"age":30,"name":"Alice"}}]
+```
+
+### Event subscription
+
+Open a new terminal and subscribe to a collection
+
+```bash
+curl -H "X-SECRET-KEY: verysecure" localhost:5050/api/mycollection/_subscribe
+data: {"collection":"mycollection","type":"connected"}
+data: {"key":"test","operation":"Create","value":{"age":10,"name":"test","serverTime":1742798981773}}
+data: {"key":"test","operation":"Delete","value":null}
+```
+
+reqs sent:
+
+```bash
+curl -sX PUT -H "X-SECRET-KEY: verysecure" -d '{"name":"test", "age": 10}' http://localhost:5050/api/mycollection/test
+curl -sX DELETE -H "X-SECRET-KEY: verysecure" http://localhost:5050/api/mycollection/test
+```
+
+### Database Management (Backup/Restore)
+
+```bash
+# Backup a collection
+curl -X POST -H "X-SECRET-KEY: verysecure" http://localhost:5050/api/mycollection/_backup
+{"message":"Backup started","id":"aRprhdOXoMrbrjyfd12bz","collection":"mycollection"}
+
+# Check backup status
+curl -sX GET -H "X-SECRET-KEY: verysecure" http://localhost:5050/api/mycollection/_backup/status?id=<backup-id>
+{
+  "id": "aRprhdOXoMrbrjyfd12bz",
+  "collection": "mycollection",
+  "started_at": "2025-03-24T06:38:03.324804Z",
+  "finished_at": "2025-03-24T06:38:03.326524Z",
+  "status": "completed",
+  "url": "/backups/mycollection-aRprhdOXoMrbrjyfd12bz.sst",
+  "error": null
+}
+
+# Download the collection backup
+curl -o mybackup.sst http://localhost:5050/backups/mycollection-aRprhdOXoMrbrjyfd12bz.sst
+
+# Upload a backup
+curl -X POST -F "file=@mybackup.sst" -H "X-SECRET-KEY: verysecure" "http://localhost:5050/api/mycollection/_backup/upload"
+{"message":"Backup file uploaded successfully","id":"sCzNjkv7JeGNbsPR1MRNV","collection":"mycollection"}
+
+# Restore a collection using Backup ID
+curl -X POST -H "X-SECRET-KEY: verysecure" \
+  http://localhost:5050/api/mycollection/_restore?backup_id=aRprhdOXoMrbrjyfd12bz
+{"message":"Backup started","id":"fsSO2RmB3I9sKPF0mm90g","collection":"mycollection"}
 ```
 
 ### Delete a key
 
 ```bash
-❯ curl -i -X DELETE -H "Content-Type: application/json" http://localhost:5050/api/mycollection/yourkey
-# No output
-# 200 OK means operation succeeded
-# Responds with error 500 if something went wrong.
-```
-
-## Benchmark
-
-A [Drill](https://github.com/fcsonline/drill) plan is available in the [benchmark](benchmark) folder.
-To run install `drill` using `cargo` and execute:
-
-```bash
-drill --benchmark benchmark/plan.yaml  --stats
-```
-
-### Plan
-
-```yaml
-iterations: 2000
-concurrency: 4
-rampup: 4
-```
-
-> System details: AMD Ryzen 7 3700X, 32 GB Ram, Samsung SSD 970 EVO Plus
-
-### Results
-
-'Failed requests' are 404 assertions, so those are actually successful.
-
-```text
-Time taken for tests      3.6 seconds
-Total requests            8000
-Successful requests       6000
-Failed requests           2000
-Requests per second       2239.79 [#/sec]
-Median time per request   0ms
-Average time per request  2ms
-Sample standard deviation 3ms
-99.0'th percentile        11ms
-99.5'th percentile        11ms
-99.9'th percentile        11ms
-```
-
-Or using `apache-bench`
-
-```bash
-apt update && apt install -y apache-bench
-ab -n 20000 -c 8 -H 'Authorization: supersecret' -p ./benchmark/data.json -T 'application/json' -rk http://127.0.0.1:5050/benchmark
-```
-
-### Results
-
-```
-Requests per second:    41251.57 [#/sec] (mean)
-Time per request:       0.194 [ms] (mean)
-Time per request:       0.024 [ms] (mean, across all concurrent requests)
-Transfer rate:          11843.71 [Kbytes/sec] received
-                        12488.27 kb/s sent
-                        24331.98 kb/s total
+curl -i -X DELETE -H "X-SECRET-KEY: verysecure" http://localhost:5050/api/mycollection/test
+HTTP/1.1 200 OK
+content-length: 0
+vary: Origin, Access-Control-Request-Method, Access-Control-Request-Headers
+access-control-allow-credentials: true
+date: Sun, 23 Mar 2025 19:49:44 GMT
 ```

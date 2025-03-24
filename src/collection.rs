@@ -1,7 +1,9 @@
 use crate::{
     auth::*,
     error::ApiError,
+    key::Operation,
     kv::{Direction, KVStore, KvStoreError, RocksDB},
+    namespace::CollectionPath,
     sub::*,
     SECRETS_CF,
 };
@@ -12,12 +14,11 @@ use std::{
 };
 
 use actix_web::{
-    web::{Data, Path, Query},
-    HttpRequest, HttpResponse,
+    web::{Data, Json, Query},
+    HttpMessage, HttpRequest, HttpResponse,
 };
 use chrono::Utc;
-use nanoid::nanoid;
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::Value;
 
 use bytes::Bytes;
@@ -36,6 +37,13 @@ pub struct RangeQuery {
     pub order: Option<SortOrder>,
     #[serde(default = "def_true")]
     pub keys: bool,
+    pub query: Option<String>,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct CollectionCreatedResponse {
+    message: String,
+    secret_key: String,
 }
 
 impl Default for RangeQuery {
@@ -46,15 +54,9 @@ impl Default for RangeQuery {
             limit: None,
             order: None,
             keys: def_true(),
+            query: None,
         }
     }
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ListRequest {
-    #[serde(flatten)]
-    range: Option<RangeQuery>,
-    query: Option<Value>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -77,7 +79,7 @@ impl From<SortOrder> for Direction {
 fn def_true() -> bool {
     true
 }
-pub async fn exists(name: Path<String>, db: Data<RocksDB>) -> HttpResponse {
+pub async fn exists(name: CollectionPath, db: Data<RocksDB>) -> HttpResponse {
     if db.cf_exists(&name) {
         HttpResponse::Ok().finish()
     } else {
@@ -86,136 +88,211 @@ pub async fn exists(name: Path<String>, db: Data<RocksDB>) -> HttpResponse {
 }
 
 pub async fn create(
-    name: Path<String>,
+    name: CollectionPath,
     req: HttpRequest,
     db: Data<RocksDB>,
 ) -> Result<HttpResponse, ApiError> {
-    if db.cf_exists(&name) {
-        Ok(HttpResponse::Conflict().body(format!("Collection {name} already exists")))
+    let collection_name = name.internal_collection();
+    if db.cf_exists(collection_name) {
+        Ok(HttpResponse::Conflict().json(format!("Collection {name} already exists")))
     } else {
         let timestamp = Utc::now().to_rfc3339();
 
-        // Get secret from header or generate new one
-        let secret_key = req
-            .headers()
-            .get("X-SECRET-KEY")
-            .and_then(|h| h.to_str().ok())
-            .map(String::from)
-            .unwrap_or_else(|| nanoid!(32));
-
-        db.create_cf(&name)
+        // Get the secret key that was set by the middleware
+        let secret_key = match req.extensions().get::<SecretKey>() {
+            Some(secret) => secret.0.clone(),
+            None => {
+                // This should rarely happen if middleware is working correctly
+                return Err(ApiError::internal(
+                    "Secret key not found in request extensions",
+                    "Authentication middleware may not be configured correctly",
+                ));
+            }
+        };
+        db.create_cf(collection_name)
             .map_err(|e| ApiError::internal("Failed to create collection", e))?;
 
-        let secret = Secret {
-            created_at: timestamp,
-            secret: hash_secret_key(&secret_key),
-        };
+        if let Err(e) = db.create_cf(&format!("{collection_name}-backups")) {
+            log::error!("Failed to create backups collection: {}", e);
+        }
 
-        db.insert_cf(SECRETS_CF, &name, &secret)
+        let secret = create_secret(&secret_key, timestamp);
+
+        db.insert_cf(SECRETS_CF, collection_name, &secret)
             .map_err(|e| match e {
                 KvStoreError::InvalidColumnFamily(_) => Ok(HttpResponse::NotFound().finish()),
                 _ => Err(ApiError::internal("Failed to insert item", e)),
             })
             .unwrap();
 
-        log::info!("Created collection {name}");
+        db.insert_cf(SECRETS_CF, &format!("{collection_name}-backups"), &secret)
+            .map_err(|e| match e {
+                KvStoreError::InvalidColumnFamily(_) => Ok(HttpResponse::NotFound().finish()),
+                _ => Err(ApiError::internal("Failed to insert item", e)),
+            })
+            .unwrap();
 
-        Ok(HttpResponse::Created().json(serde_json::json!({
-            "message": format!("Collection {name} created")
-        })))
+        Ok(HttpResponse::Created().json(CollectionCreatedResponse {
+            message: format!("Collection {} created", name.user_collection()),
+            secret_key,
+        }))
     }
 }
 
-pub async fn drop(name: Path<String>, db: Data<RocksDB>) -> Result<HttpResponse, ApiError> {
-    let name = name.into_inner();
-    if !db.cf_exists(&name) {
-        Ok(HttpResponse::NotFound().body(format!("Collection {name} does not exist")))
+pub async fn drop(collection: CollectionPath, db: Data<RocksDB>) -> Result<HttpResponse, ApiError> {
+    let user_collection = collection.user_collection();
+    let internal_collection = collection.internal_collection();
+
+    if !db.cf_exists(internal_collection) {
+        return Ok(
+            HttpResponse::NotFound().json(format!("Collection {user_collection} does not exist"))
+        );
+    };
+
+    if user_collection.contains("-backups") {
+        let base_collection = &internal_collection.replace("-backups", "");
+        if db.cf_exists(base_collection) {
+            Ok(HttpResponse::Ok().json(format!(
+                "Can't delete backups collection without deleting {user_collection} collection first"
+            )))
+        } else {
+            db.drop_cf(internal_collection)
+                .map_err(|e| ApiError::internal("Failed to drop collection", e))?;
+
+            Ok(HttpResponse::Ok().json(format!("Collection {user_collection} deleted")))
+        }
     } else {
-        db.drop_cf(&name)
+        let response = if db.cf_exists(&format!("{}-backups", collection.internal_collection())) {
+            format!("Collection {user_collection} deleted. Your backups are still available at collection {user_collection}-backups. Make a DELETE request to that collection to remove them")
+        } else {
+            format!("Collection {user_collection} deleted")
+        };
+        db.drop_cf(collection.internal_collection())
             .map_err(|e| ApiError::internal("Failed to drop collection", e))?;
-
-        Ok(HttpResponse::Created().body(format!("Collection {name} deleted")))
+        Ok(HttpResponse::Ok().json(response))
     }
 }
+
+fn execute_range_query<T: DeserializeOwned + Serialize>(
+    db: &RocksDB,
+    collection: &str,
+    range_query: &RangeQuery,
+) -> Result<Value, KvStoreError> {
+    let from = range_query.from.as_deref().unwrap_or("");
+    let to = range_query.to.as_deref().unwrap_or("\u{fff0}");
+    let limit = range_query.limit.unwrap_or(usize::MAX);
+    let direction = range_query
+        .order
+        .clone()
+        .map(Into::into)
+        .unwrap_or(Direction::Forward);
+
+    // Use the appropriate method based on the keys flag
+    let result = if range_query.keys {
+        let items = db.get_range_cf_with_keys::<T>(collection, from, to, limit, direction)?;
+        serde_json::to_value(items).map_err(|e| KvStoreError::SerializationError(e.to_string()))?
+    } else {
+        let items = db.get_range_cf::<T>(collection, from, to, limit, direction)?;
+        serde_json::to_value(items).map_err(|e| KvStoreError::SerializationError(e.to_string()))?
+    };
+
+    Ok(result)
+}
+
+// Same for JSONPath queries
+fn execute_query<T: DeserializeOwned + Serialize>(
+    db: &RocksDB,
+    collection: &str,
+    query_str: &str,
+    include_keys: bool,
+) -> Result<Value, KvStoreError> {
+    let result = if include_keys {
+        let items = db.query_cf_with_keys::<T>(collection, query_str)?;
+        serde_json::to_value(items).map_err(|e| KvStoreError::SerializationError(e.to_string()))?
+    } else {
+        let items = db.query_cf::<T>(collection, query_str)?;
+        serde_json::to_value(items).map_err(|e| KvStoreError::SerializationError(e.to_string()))?
+    };
+
+    Ok(result)
+}
+
 pub async fn list(
-    collection: Path<String>,
+    collection: CollectionPath,
     query: Query<RangeQuery>,
     db: Data<RocksDB>,
 ) -> Result<HttpResponse, ApiError> {
-    if !db.cf_exists(&collection) {
-        Ok(HttpResponse::NotFound().finish())
-    } else {
-        let from = query.from.as_deref().unwrap_or("");
-        let to = query.to.as_deref().unwrap_or("\u{fff0}");
-        let direction = match query.order.clone().unwrap_or(SortOrder::Ascending) {
-            SortOrder::Ascending => Direction::Forward,
-            SortOrder::Descending => Direction::Reverse,
-        };
+    if !db.cf_exists(collection.internal_collection()) {
+        return Ok(HttpResponse::NotFound().finish());
+    }
+
+    let from = query.from.as_deref().unwrap_or("");
+    let to = query.to.as_deref().unwrap_or("\u{fff0}");
+    let limit = query.limit.unwrap_or(usize::MAX);
+    let direction = match query.order.clone().unwrap_or(SortOrder::Ascending) {
+        SortOrder::Ascending => Direction::Forward,
+        SortOrder::Descending => Direction::Reverse,
+    };
+
+    // Convert the results to serde_json::Value to handle the type difference
+    let result = if query.keys {
+        // With keys (key-value pairs)
         let items = db
-            .get_range_cf::<Value>(
-                &collection,
-                from,
-                to,
-                query.limit.unwrap_or(usize::MAX),
-                direction,
-                query.keys,
-            )
+            .get_range_cf_with_keys::<Value>(&collection, from, to, limit, direction)
+            .map_err(|e| ApiError::internal("Failed to fetch items with keys", e))?;
+
+        serde_json::to_value(items)
+            .map_err(|e| ApiError::internal("Failed to serialize items", e))?
+    } else {
+        // Without keys (values only)
+        let items = db
+            .get_range_cf::<Value>(&collection, from, to, limit, direction)
             .map_err(|e| ApiError::internal("Failed to fetch items", e))?;
 
-        Ok(HttpResponse::Ok().json(items))
-    }
+        serde_json::to_value(items)
+            .map_err(|e| ApiError::internal("Failed to serialize items", e))?
+    };
+
+    Ok(HttpResponse::Ok().json(result))
 }
+
+// With helpers, the endpoints become much cleaner:
 pub async fn query(
-    collection: Path<String>,
-    query_params: Option<Query<RangeQuery>>,
-    body: Option<Bytes>,
+    collection: CollectionPath,
+    query: Json<RangeQuery>,
     db: Data<RocksDB>,
 ) -> Result<HttpResponse, ApiError> {
     if !db.cf_exists(&collection) {
         return Ok(HttpResponse::NotFound().finish());
     }
 
-    let list_request: Option<ListRequest> = body.and_then(|b| serde_json::from_slice(&b).ok());
-    let range_query = list_request
-        .as_ref()
-        .and_then(|req| req.range.as_ref())
-        .or_else(|| query_params.as_ref().map(|q| &q.0))
-        .cloned()
-        .unwrap_or_default();
+    if !db.cf_exists(&collection) {
+        return Ok(HttpResponse::NotFound().finish());
+    }
 
-    let results = if let Some(query) = list_request.and_then(|req| req.query) {
-        let query_str = match query {
-            Value::String(s) => s,
-            _ => query.to_string(),
-        };
-        db.query_cf::<Value>(&collection, &query_str, range_query.keys)?
+    let result = if let Some(query_str) = &query.query {
+        // If a JSONPath query is provided, use it
+        execute_query::<Value>(&db, &collection, query_str, query.keys)
+            .map_err(|e| ApiError::internal("Failed to execute query", e))?
     } else {
-        db.get_range_cf::<Value>(
-            &collection,
-            range_query.from.as_deref().unwrap_or(""),
-            range_query.to.as_deref().unwrap_or("\u{fff0}"),
-            range_query.limit.unwrap_or(usize::MAX),
-            range_query
-                .order
-                .map(Into::into)
-                .unwrap_or(Direction::Forward),
-            range_query.keys,
-        )?
+        // Otherwise, perform a range query
+        execute_range_query::<Value>(&db, &collection, &query)
+            .map_err(|e| ApiError::internal("Failed to execute range query", e))?
     };
 
-    Ok(HttpResponse::Ok().json(results))
+    Ok(HttpResponse::Ok().json(result))
 }
 
 pub async fn create_batch(
-    path: Path<String>,
+    path: CollectionPath,
     db: Data<RocksDB>,
     sub_manager: Data<Arc<SubscriptionManager>>,
     body: Bytes,
 ) -> Result<HttpResponse, ApiError> {
-    let collection = path.into_inner();
+    let collection = path.internal_collection();
     let items: Vec<BatchItem> = match serde_json::from_slice(&body) {
         Ok(items) => items,
-        Err(_) => return Ok(HttpResponse::BadRequest().body("Invalid JSON batch format")),
+        Err(_) => return Ok(HttpResponse::BadRequest().json("Invalid JSON batch format")),
     };
 
     let batch_items: Vec<(&str, &Value)> = items
@@ -223,16 +300,16 @@ pub async fn create_batch(
         .map(|item| (item.key.as_str(), &item.value))
         .collect();
 
-    match db.batch_insert_cf(&collection, &batch_items) {
+    match db.batch_insert_cf(collection, &batch_items) {
         Ok(_) => {
             // Notify subscribers for each item in the batch
             for item in &items {
                 let event = CollectionEvent {
-                    operation: "create".to_string(),
+                    operation: Operation::Create,
                     key: item.key.clone(),
                     value: item.value.clone(),
                 };
-                sub_manager.publish(&collection, event).await;
+                sub_manager.publish(collection, event).await;
             }
             Ok(HttpResponse::Created().json(items))
         }
@@ -241,38 +318,77 @@ pub async fn create_batch(
     }
 }
 pub async fn subscribe(
-    path: Path<String>,
+    path: CollectionPath,
     sub_manager: Data<Arc<SubscriptionManager>>,
 ) -> Result<HttpResponse, ApiError> {
-    let collection = path.into_inner();
-    let sender = sub_manager.get_or_create_channel(&collection).await;
+    let internal_collection = path.internal_collection().to_string(); // Clone to own the string
+    let user_collection = path.user_collection().to_string(); // Clone to own the string
+    let sender = sub_manager
+        .get_or_create_channel(&internal_collection)
+        .await;
     let mut receiver = sender.subscribe();
 
-    let stream = async_stream::stream! {
-        while let Ok(event) = receiver.recv().await {
-            // Create new event with timestamp
-            let timestamp = SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis();
+    // Log that a new subscriber connected
+    log::info!(
+        "New subscriber connected to collection '{}'",
+        internal_collection
+    );
 
-            // Convert event to Value, add timestamp, convert back
-            let mut event_json = serde_json::to_value(&event)?;
-            if let Some(value) = event_json.get_mut("value") {
-                if let Some(obj) = value.as_object_mut() {
-                    obj.insert("serverTime".to_string(), serde_json::json!(timestamp));
+    let stream = async_stream::stream! {
+        // Send initial connection message
+        let init_message = serde_json::json!({"type": "connected", "collection": user_collection});
+        let sse_msg = format!("data: {}\n\n", serde_json::to_string(&init_message).unwrap_or_default());
+        yield Ok::<_, actix_web::Error>(Bytes::from(sse_msg));
+
+        loop {
+            match receiver.recv().await {
+                Ok(event) => {
+                    // Create new event with timestamp
+                    let timestamp = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis();
+
+                    // Convert event to Value, add timestamp, convert back
+                    let mut event_json = serde_json::to_value(&event)?;
+                    if let Some(value) = event_json.get_mut("value") {
+                        if let Some(obj) = value.as_object_mut() {
+                            obj.insert("serverTime".to_string(), serde_json::json!(timestamp));
+                        }
+                    }
+
+                    // Format as proper SSE message with data: prefix and double newline
+                    let msg = format!("data: {}\n\n", serde_json::to_string(&event_json).unwrap_or_default());
+                    log::debug!("Sending SSE message: {}", msg);
+                    yield Ok::<_, actix_web::Error>(Bytes::from(msg));
+                },
+                Err(e) => {
+                    log::error!("Error receiving from broadcast channel: {:?}", e);
+                    // For lagged errors, we can continue
+                    match e {
+                        tokio::sync::broadcast::error::RecvError::Lagged(n) => {
+                            log::warn!("Receiver lagged and missed {} messages", n);
+                            continue;
+                        },
+                        tokio::sync::broadcast::error::RecvError::Closed => {
+                            log::error!("Broadcast channel was closed");
+                            break;
+                        }
+                    }
                 }
             }
-
-            yield Ok::<_, actix_web::Error>(Bytes::from(
-                serde_json::to_string(&event_json).unwrap_or_default()
-            ));
         }
+
+        // This message won't be sent because we're breaking out of the loop,
+        // but it's here to show that the stream ending is expected
+        log::info!("SSE stream closed for collection '{}'", internal_collection);
     };
 
+    // Set proper headers for SSE
     Ok(HttpResponse::Ok()
         .insert_header(("Content-Type", "text/event-stream"))
         .insert_header(("Cache-Control", "no-cache"))
         .insert_header(("Connection", "keep-alive"))
+        .insert_header(("X-Accel-Buffering", "no")) // Disable proxy buffering
         .streaming(stream))
 }

@@ -4,15 +4,17 @@ mod collection;
 mod error;
 pub mod key;
 mod middleware;
+mod namespace;
+mod sst;
 mod sub;
 use crate::kv::KVStore;
 pub use rocksdb_client as kv;
 use std::sync::Arc;
 pub const SECRETS_CF: &str = "secrets";
-
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     use actix_cors::Cors;
+    use actix_files as fs;
     use actix_web::{
         middleware::{from_fn, Logger},
         web::{delete, get, head, post, put, resource, scope, Data, JsonConfig, PayloadConfig},
@@ -40,7 +42,6 @@ async fn main() -> std::io::Result<()> {
     let opts = config_db();
     let db: kv::RocksDB =
         kv::KVStore::open_with_existing_cfs(&opts, &db_path).expect("Failed to open database");
-
     if !db.cf_exists(SECRETS_CF) {
         db.create_cf(SECRETS_CF)
             .expect("Failed to create required secrets collection - cannot start server");
@@ -48,6 +49,11 @@ async fn main() -> std::io::Result<()> {
     } else {
         log::info!("CF Secrets exists")
     };
+
+    // Initialize backup and restore
+    sst::initialize_backup_restore(&db)
+        .expect("Failed to initialize backup and restore facilities");
+    log::info!("Initialized backup and restore facilities");
 
     log::info!("starting HTTP server at http://0.0.0.0:{port}");
     HttpServer::new(move || {
@@ -62,9 +68,10 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .service(
                 scope("/api")
+                    .wrap(namespace::CollectionNamespace)
                     .wrap(from_fn(middleware::require_auth))
                     .service(
-                        resource("/{name}")
+                        resource("/{collection}")
                             .route(head().to(collection::exists))
                             .route(delete().to(collection::drop))
                             .route(put().to(collection::create))
@@ -77,6 +84,29 @@ async fn main() -> std::io::Result<()> {
                     .service(
                         resource("/{collection}/_subscribe").route(get().to(collection::subscribe)),
                     )
+                    // New backup and restore endpoints
+                    .service(
+                        resource("/{collection}/_backup")
+                            .route(post().to(sst::start_backup))
+                            .route(get().to(sst::list_backups)),
+                    )
+                    .service(
+                        resource("/{collection}/_backup/upload")
+                            .route(post().to(sst::upload_backup)),
+                    )
+                    .service(
+                        resource("{collection}/_backup/status").route(get().to(sst::backup_status)),
+                    )
+                    .service(
+                        resource("/{collection}/_restore")
+                            .route(post().to(sst::start_restore))
+                            .route(get().to(sst::list_restores)),
+                    )
+                    .service(
+                        resource("/{collection}/_restore/status")
+                            .route(get().to(sst::restore_status)),
+                    )
+                    .service(resource("/{collection}/_import").route(post().to(key::import_values)))
                     .service(
                         resource("/{collection}/{key}")
                             .route(get().to(key::get))
@@ -86,6 +116,8 @@ async fn main() -> std::io::Result<()> {
                     ),
             )
             .service(resource("/benchmark").route(get().to(benchmark::start)))
+            // Serve backup files
+            .service(fs::Files::new("/backups/", sst::BACKUP_DIR))
     })
     .bind(("0.0.0.0", port))?
     .workers(workers)

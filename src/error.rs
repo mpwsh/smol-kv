@@ -49,4 +49,18 @@ impl ApiError {
             status: StatusCode::UNAUTHORIZED,
         }
     }
+
+    pub fn bad_request(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            status: StatusCode::BAD_REQUEST,
+        }
+    }
+
+    pub fn missing_key() -> Self {
+        Self {
+            message: "Missing key parameter".into(),
+            status: StatusCode::BAD_REQUEST,
+        }
+    }
 }
