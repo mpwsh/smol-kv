@@ -165,7 +165,12 @@ curl -X POST -F "file=@mybackup.sst" -H "X-SECRET-KEY: verysecure" "http://local
 # Restore a collection using Backup ID
 curl -X POST -H "X-SECRET-KEY: verysecure" \
   http://localhost:5050/api/mycollection/_restore?backup_id=aRprhdOXoMrbrjyfd12bz
-{"message":"Backup started","id":"fsSO2RmB3I9sKPF0mm90g","collection":"mycollection"}
+{"message":"Restore started","id":"aRprhdOXoMrbrjyfd12bz","collection":"mycollection"}
+
+# check the restore status
+curl -H "X-SECRET-KEY: verysecure" \
+http://localhost:5050/api/mycollection/_restore/status?id=aRprhdOXoMrbrjyfd12bz
+{"id":"aRprhdOXoMrbrjyfd12bz","collection":"mycollection","started_at":"2025-03-24T07:18:39.653921Z","finished_at":"2025-03-24T07:18:39.657541Z","status":"completed","error":null}
 ```
 
 ### Delete a key
