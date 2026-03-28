@@ -56,8 +56,8 @@ jobs:
           username: ${{ vars.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Merge image tags
-        uses: Noelware/docker-manifest-action@master
+        uses: Noelware/docker-manifest-action@v1
         with:
-          inputs: ${{ env.DOCKERHUB_REPO }}:latest,${{ env.DOCKERHUB_REPO }}:${{ github.sha }}
-          images: ${{ env.DOCKERHUB_REPO }}:latest-amd64,${{ env.DOCKERHUB_REPO }}:latest-arm64
+          tags: ${{ env.DOCKERHUB_REPO }}:latest,${{ env.DOCKERHUB_REPO }}:${{ github.sha }}
+          inputs: ${{ env.DOCKERHUB_REPO }}:latest-amd64,${{ env.DOCKERHUB_REPO }}:latest-arm64
           push: true
