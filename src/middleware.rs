@@ -34,6 +34,11 @@ pub async fn require_auth(
     req: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, Error> {
+    // Let CORS preflight through — the Cors middleware handles these
+    if req.method() == actix_web::http::Method::OPTIONS {
+        return next.call(req).await;
+    }
+
     // Skip non-API routes
     if req.path().starts_with("/benchmark") || req.path().starts_with("/backups/") {
         return next.call(req).await;
