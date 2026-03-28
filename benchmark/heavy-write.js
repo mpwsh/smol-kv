@@ -1,10 +1,10 @@
 import http from "k6/http";
 import { randomIntBetween, randomItem } from "https://jslib.k6.io/k6-utils/1.2.0/index.js";
 
-const BASE_URL = "http://localhost:5050";
+const BASE_URL = "https://smolkv.fly.dev";
 const MATCH_ID = "bench";
 const HEADERS = { 
-    "X-SECRET-KEY": "testing",
+    "X-SECRET-KEY": "zt4Mb0ZMTfpsKDiGMeFD",
     "Content-Type": "application/json"
 };
 
@@ -19,7 +19,7 @@ export let options = {
             timeUnit: '1s',
             duration: '30s',
             preAllocatedVUs: 100,
-            maxVUs: 250,
+            maxVUs: 200,
         },
     },
     thresholds: {

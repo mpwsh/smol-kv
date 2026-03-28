@@ -1,0 +1,189 @@
+<!-- ═══ QUERY VIEW ═══ -->
+<div
+  x-show="$store.app.currentView === 'query' && $store.collections.activeCollection"
+  x-transition.opacity
+>
+  <div class="mb-4">
+    <h2 class="text-[16px] font-600 text-primary mb-1">Query</h2>
+    <p class="text-[12px] text-tertiary">
+      Run JSONPath expressions against
+      <span
+        class="text-accent"
+        x-text="$store.collections.activeCollection"
+      ></span>
+    </p>
+  </div>
+  <div class="card mb-4">
+    <div class="mb-3">
+      <label class="field-label">Expression</label>
+      <div class="relative">
+        <input
+          type="text"
+          x-model="$store.data.queryInput"
+          @keyup.enter="$store.data.runQuery()"
+          placeholder="$[?@.status=='active']"
+          spellcheck="false"
+          autocomplete="off"
+          class="field-input font-mono !pr-16"
+        />
+        <button
+          @click="$store.data.runQuery()"
+          :disabled="$store.data.queryLoading || !$store.data.queryInput.trim()"
+          class="absolute right-1.5 top-1/2 -translate-y-1/2 text-[11px] font-500 text-accent hover:text-accent/80 bg-accent/10 px-3 py-1 rounded disabled:opacity-40 transition-colors"
+        >
+          <span x-show="$store.data.queryLoading" class="pulse-soft">…</span
+          ><span x-show="!$store.data.queryLoading">Run</span>
+        </button>
+      </div>
+    </div>
+    <div class="flex items-center gap-4 mb-3">
+      <label class="flex items-center gap-2 cursor-pointer"
+        ><input
+          type="checkbox"
+          x-model="$store.data.queryIncludeKeys"
+          class="accent-accent w-3 h-3"
+        /><span class="text-[12px] text-secondary">Include keys</span></label
+      >
+      <div class="flex items-center gap-2">
+        <label class="text-[12px] text-tertiary">Limit</label
+        ><input
+          type="number"
+          x-model="$store.data.queryLimit"
+          placeholder="∞"
+          min="1"
+          class="w-16 bg-ground border border-rule rounded text-[11px] font-mono text-primary px-2 py-1 outline-none focus:border-accent/50"
+        />
+      </div>
+    </div>
+    <template x-if="$store.data.queryHistory.length > 0">
+      <div class="mb-3">
+        <label class="field-label">Recent</label>
+        <div class="flex flex-wrap gap-1.5">
+          <template x-for="q in $store.data.queryHistory" :key="q"
+            ><button
+              @click="$store.data.queryInput = q"
+              class="font-mono text-[10px] text-quaternary hover:text-accent bg-ground border border-rule/50 px-2 py-0.5 rounded transition-colors truncate max-w-[200px]"
+              x-text="q"
+            ></button
+          ></template>
+        </div>
+      </div>
+    </template>
+    <details class="group">
+      <summary
+        class="font-mono text-[11px] text-quaternary cursor-pointer hover:text-tertiary transition-colors list-none flex items-center gap-1"
+      >
+        <svg
+          class="w-3 h-3 transition-transform group-open:rotate-90"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M8.25 4.5l7.5 7.5-7.5 7.5"
+          /></svg
+        >JSONPath cheat sheet
+      </summary>
+      <div
+        class="mt-2 font-mono text-[11px] text-quaternary leading-relaxed bg-ground rounded-md p-3 space-y-0.5"
+      >
+        <div>
+          <span class="text-secondary">$[?@.field == 'value']</span> — exact
+          match
+        </div>
+        <div>
+          <span class="text-secondary">$[?@.age > 10]</span> — comparison
+        </div>
+        <div>
+          <span class="text-secondary">$[?@.x > 10 &amp;&amp; @.y &lt; 5]</span>
+          — AND
+        </div>
+        <div>
+          <span class="text-secondary">$[?@.x == 1 || @.x == 2]</span>
+          — OR
+        </div>
+        <div>
+          <span class="text-secondary">$[?@.stats.score > 100]</span>
+          — nested
+        </div>
+        <div><span class="text-secondary">$[*]</span> — all items</div>
+        <div><span class="text-secondary">$[0:5]</span> — slice</div>
+      </div>
+    </details>
+  </div>
+  <template x-if="$store.data.queryResults !== null">
+    <div class="card fade-in">
+      <div class="card-header">
+        <h3 class="card-title">Results</h3>
+        <div class="flex items-center gap-3">
+          <span
+            class="card-meta"
+            x-text="$store.data.queryResults.length + ' matches'"
+          ></span
+          ><template x-if="$store.data.queryDuration !== null"
+            ><span
+              class="card-meta"
+              x-text="$store.data.queryDuration + 'ms'"
+            ></span></template
+          ><button
+            @click="$store.auth.copyToClipboard(JSON.stringify($store.data.queryResults, null, 2), 'Results copied')"
+            class="p-1 text-quaternary hover:text-secondary transition-colors rounded"
+            title="Copy all"
+          >
+            <svg
+              class="w-3.5 h-3.5"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div class="max-h-[60vh] overflow-y-auto scroll-thin">
+        <template x-if="$store.data.queryResults.length === 0"
+          ><div class="text-center py-6">
+            <p class="font-mono text-[12px] text-quaternary">No matches</p>
+          </div></template
+        >
+        <div class="space-y-2">
+          <template x-for="(result, i) in $store.data.queryResults" :key="i"
+            ><div class="bg-ground rounded-md p-3 border border-rule/50">
+              <template x-if="result.key !== undefined"
+                ><div>
+                  <div
+                    class="font-mono text-[11px] text-accent mb-2"
+                    x-text="result.key"
+                  ></div>
+                  <div
+                    class="json-view text-[11px]"
+                    x-html="$store.app.syntaxHighlight(result.value)"
+                  ></div></div></template
+              ><template x-if="result.key === undefined"
+                ><div
+                  class="json-view text-[11px]"
+                  x-html="$store.app.syntaxHighlight(result)"
+                ></div
+              ></template></div
+          ></template>
+        </div>
+      </div>
+    </div>
+  </template>
+  <template x-if="$store.data.queryError"
+    ><div class="card fade-in">
+      <div
+        class="bg-danger/5 border border-danger/20 rounded-md px-4 py-3 font-mono text-[12px] text-danger"
+        x-text="$store.data.queryError"
+      ></div></div
+  ></template>
+</div>

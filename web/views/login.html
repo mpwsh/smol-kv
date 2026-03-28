@@ -1,0 +1,145 @@
+    <!-- ═══════════════════════════════════════════════════════════════════════
+         LOGIN SCREEN
+         ═══════════════════════════════════════════════════════════════════════ -->
+    <div
+      x-data
+      x-show="!$store.auth.isLoggedIn"
+      x-transition.opacity
+      class="min-h-screen flex items-center justify-center px-4"
+    >
+      <div class="w-full max-w-sm">
+        <!-- Logo -->
+        <div class="text-center mb-8">
+          <div
+            class="w-12 h-12 rounded-xl bg-accent/10 flex items-center justify-center mx-auto mb-4"
+          >
+            <svg
+              class="w-6 h-6 text-accent"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
+              />
+            </svg>
+          </div>
+          <h1 class="text-[20px] font-600 text-primary tracking-tight">
+            smol-kv
+          </h1>
+          <p class="text-[13px] text-tertiary mt-1">JSON document store</p>
+        </div>
+
+        <!-- Login card -->
+        <div class="card">
+          <div class="mb-4">
+            <label class="field-label">Access Key</label>
+            <p class="text-[11px] text-quaternary mb-3">
+              Your key scopes and protects your collections. All collections
+              created with the same key share a namespace.
+            </p>
+            <input
+              type="password"
+              x-model="$store.auth.accessKey"
+              @keyup.enter="$store.auth.login()"
+              placeholder="Enter your access key"
+              spellcheck="false"
+              autocomplete="off"
+              class="field-input font-mono"
+            />
+          </div>
+
+          <button
+            @click="$store.auth.login()"
+            :disabled="!$store.auth.accessKey.trim() || $store.auth.loginLoading"
+            class="btn-primary w-full mb-3"
+          >
+            <span x-show="$store.auth.loginLoading" class="pulse-soft"
+              >Connecting…</span
+            >
+            <span x-show="!$store.auth.loginLoading">Connect</span>
+          </button>
+
+          <div class="relative flex items-center justify-center my-4">
+            <div class="h-px bg-rule flex-1"></div>
+            <span class="px-3 text-[11px] text-quaternary">or</span>
+            <div class="h-px bg-rule flex-1"></div>
+          </div>
+
+          <button @click="$store.auth.generateKey()" class="btn-secondary w-full">
+            Generate new key
+          </button>
+        </div>
+
+        <!-- Generated key confirmation -->
+        <div
+          x-show="$store.auth.showGenerateConfirm"
+          x-transition
+          class="card mt-4"
+        >
+          <div class="flex items-center gap-2 mb-3">
+            <svg
+              class="w-4 h-4 text-warn shrink-0"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+              />
+            </svg>
+            <span class="text-[13px] font-500 text-warn"
+              >Save this key — you won't see it again</span
+            >
+          </div>
+
+          <div class="relative mb-3">
+            <div
+              class="bg-ground border border-rule rounded-md p-3 font-mono text-[12px] text-accent break-all pr-10"
+              x-text="$store.auth.generatedKey"
+            ></div>
+            <button
+              @click="$store.auth.copyToClipboard($store.auth.generatedKey, 'Key copied!')"
+              class="absolute right-2 top-2 p-1.5 text-quaternary hover:text-secondary transition-colors rounded"
+              title="Copy"
+            >
+              <svg
+                class="w-4 h-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <div class="flex gap-2">
+            <button
+              @click="$store.auth.confirmGeneratedKey()"
+              class="btn-primary flex-1"
+            >
+              I've saved it — connect
+            </button>
+            <button
+              @click="$store.auth.showGenerateConfirm = false; $store.auth.generatedKey = ''"
+              class="btn-secondary"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+

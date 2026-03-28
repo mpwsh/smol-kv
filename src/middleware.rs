@@ -1,5 +1,5 @@
 use crate::{
-    auth::{self, InternalCollection, AUTH_HEADER_NAME},
+    auth::{self, extract_secret_key, InternalCollection, SecretKey},
     error::ApiError,
     kv::RocksDB,
 };
@@ -34,34 +34,31 @@ pub async fn require_auth(
     req: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<impl MessageBody>, Error> {
-    // Skip auth for benchmark endpoint
+    // Skip non-API routes
     if req.path().starts_with("/benchmark") || req.path().starts_with("/backups/") {
         return next.call(req).await;
     }
 
-    // Parse the path properly
     let path_segments: Vec<&str> = req.path().split('/').collect();
     if path_segments.len() < 3 {
         return Err(ApiError::unauthorized("Invalid path").into());
     }
 
-    // Is this a public endpoint? (collection creation or backup download)
-    let is_public_endpoint = match (
-        req.method().as_str(),
-        path_segments.get(2),
-        path_segments.get(3),
-    ) {
-        // PUT /api/{collection} - create collection
-        ("PUT", Some(_), None) => true,
-        // Other public endpoints...
+    let collection_name = path_segments[2];
+
+    // Public endpoints — no auth needed
+    let is_public = match (req.method().as_str(), collection_name, path_segments.get(3)) {
+        ("PUT", _, None) => true,                      // Collection creation
+        (_, name, _) if name.starts_with('_') => true, // System endpoints
         _ => false,
     };
 
-    if is_public_endpoint {
+    if is_public {
         return next.call(req).await;
     }
 
-    // For auth-required endpoints:
+    // ── Auth required ────────────────────────────────────────────────────
+
     let db = req
         .app_data::<actix_web::web::Data<RocksDB>>()
         .ok_or_else(|| ApiError::internal("Database not found", "missing database"))?;
@@ -70,36 +67,36 @@ pub async fn require_auth(
         .app_data::<actix_web::web::Data<String>>()
         .ok_or_else(|| ApiError::internal("Admin token not found", "missing token"))?;
 
-    // Extract collection name from path
-    let user_collection_name = path_segments[2];
+    // Get the key — already extracted by namespace middleware into extensions,
+    // or extract fresh from header/query param
+    let secret_key = req
+        .extensions()
+        .get::<SecretKey>()
+        .map(|k| k.0.clone())
+        .or_else(|| extract_secret_key(&req));
 
-    // Try to get the internal collection name from extensions
-    let internal_collection = if let Some(ic) = req.extensions().get::<InternalCollection>() {
-        ic.0.clone()
-    } else {
-        // If middleware didn't set it, calculate it here as fallback
-        // Get secret key from headers
-        let secret_key = req
-            .headers()
-            .get(AUTH_HEADER_NAME)
-            .and_then(|h| h.to_str().ok())
-            .map(String::from);
+    // Get the internal collection name — set by namespace middleware
+    let internal_collection = req
+        .extensions()
+        .get::<InternalCollection>()
+        .map(|ic| ic.0.clone())
+        .unwrap_or_else(|| {
+            // Fallback: derive it here (shouldn't happen if namespace middleware ran)
+            if let Some(ref key) = secret_key {
+                let namespace = crate::namespace::hash_collection_namespace(key);
+                format!("{}-{}", namespace, collection_name)
+            } else {
+                collection_name.to_string()
+            }
+        });
 
-        if let Some(key) = &secret_key {
-            let namespace = crate::namespace::hash_collection_namespace(key);
-            let internal = format!("{}-{}", namespace, user_collection_name);
-            internal
-        } else {
-            user_collection_name.to_string()
-        }
-    };
-
+    // Check auth: admin token OR matching collection secret
     let is_authenticated = auth::verify_admin_token(req.headers(), admin_token)
-        || auth::verify_collection_secret(req.headers(), db, &internal_collection)?;
+        || auth::verify_collection_secret(secret_key.as_deref(), db, &internal_collection)?;
 
     if is_authenticated {
         req.extensions_mut()
-            .insert(CollectionAuth::new(user_collection_name));
+            .insert(CollectionAuth::new(collection_name));
         next.call(req).await
     } else {
         Err(ApiError::unauthorized("Unauthorized access").into())

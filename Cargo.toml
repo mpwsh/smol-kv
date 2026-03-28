@@ -1,11 +1,12 @@
 [package]
 name = "smol-kv"
-version = "0.3.5"
+version = "0.4.0"
 authors = ["mpw <x@mpw.sh>"]
 edition = "2021"
 
 [dependencies]
-rocksdb-client = { git = "https://github.com/mpwsh/rocksdb-client", version = "0.1.66" }
+rocksdb-client = { git = "https://github.com/mpwsh/rocksdb-client", version = "0.2.1" }
+#rocksdb-client = { path = "../rocksdb-client" }
 sha1 = "0.10.6"
 bytes = "1.10.1"
 env_logger = "0.11.7"
@@ -20,7 +21,7 @@ num_cpus = "1.16.0"
 actix-cors = "0.7.1"
 ring = "0.17.14"
 nanoid = "0.4.0"
-chrono =  {version = "0.4.40", features = ["serde"]}
+chrono = { version = "0.4.40", features = ["serde"] }
 tokio = "1.44.1"
 futures-util = "0.3.31"
 async-stream = "0.3.6"
@@ -47,6 +48,3 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
-
-#[profile.release]
-#debug = true

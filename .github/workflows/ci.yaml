@@ -48,7 +48,7 @@ jobs:
             target: aarch64-apple-darwin
             bin: ${{ github.event.repository.name }}-arm64-darwin
         toolchain:
-          - 1.82.0
+          - 1.89.0
     steps:
       - uses: actions/checkout@v4
 

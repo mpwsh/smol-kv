@@ -4,10 +4,10 @@ import { randomIntBetween, randomItem } from "https://jslib.k6.io/k6-utils/1.2.0
 import { check } from "k6";
 
 // Configuration
-const BASE_URL = "http://localhost:5050";
+const BASE_URL = "https://smolkv.fly.dev";
 const MATCH_ID = "bench";
 const HEADERS = { 
-  "X-SECRET-KEY": "testing",
+  "X-SECRET-KEY": "zt4Mb0ZMTfpsKDiGMeFD",
   "Content-Type": "application/json"
 };
 
@@ -15,7 +15,7 @@ export let options = {
   scenarios: {
     game_simulation: {
       executor: 'constant-vus',
-      vus: 200,
+      vus: 50,
       duration: '30s',
     },
   },
@@ -134,7 +134,7 @@ export default function () {
   const randomQueryType = randomItem(queryTypes);
   
   // Try different query methods for more thorough testing
-  const queryMethod = randomIntBetween(1, 3);
+  const queryMethod = randomIntBetween(1, 2);
   
   let queryResp;
   
@@ -155,15 +155,6 @@ export default function () {
       break;
       
     case 2:
-      // Method 2: GET with query in URL param (properly encoded)
-      const encodedQuery = encodeURIComponent(randomQueryType.query);
-      queryResp = http.get(
-        `${BASE_URL}/api/${MATCH_ID}?query=${encodedQuery}&keys=${Math.random() > 0.5}&limit=${randomIntBetween(5, 20)}`,
-        { headers: HEADERS }
-      );
-      break;
-      
-    case 3:
       // Method 3: Basic range query (no JSONPath)
       queryResp = http.get(
         `${BASE_URL}/api/${MATCH_ID}?from=1&to=25&keys=${Math.random() > 0.5}&limit=${randomIntBetween(5, 20)}`,

@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>smol-kv</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+    <script src="tailwinds.js"></script>
+    <!-- Stores register alpine:init listeners (fire when Alpine.start() is called) -->
+    <script src="js/stores/auth.js"></script>
+    <script src="js/stores/collections.js"></script>
+    <script src="js/stores/data.js"></script>
+    <script src="js/stores/live.js"></script>
+    <script src="js/stores/backups.js"></script>
+    <script src="js/app.js"></script>
+  </head>
+  <body class="bg-ground text-primary font-sans min-h-screen">
+    <!-- Login -->
+    <div data-view="login"></div>
+
+    <!-- Main app (shown after login) -->
+    <div
+      x-data
+      x-show="$store.auth.isLoggedIn"
+      x-transition.opacity
+      class="flex h-screen overflow-hidden"
+    >
+      <!-- Sidebar overlay (mobile) -->
+      <div
+        x-show="$store.app.showSidebar"
+        x-transition.opacity
+        @click="$store.app.showSidebar = false"
+        class="fixed inset-0 z-20 bg-black/50 backdrop-blur-sm md:hidden"
+      ></div>
+
+      <!-- Sidebar -->
+      <div data-view="sidebar"></div>
+
+      <!-- Main content -->
+      <main class="flex-1 overflow-y-auto scroll-thin">
+        <div
+          class="sticky top-0 z-10 bg-ground/80 backdrop-blur-md border-b border-rule/50 px-4 py-3 flex items-center gap-3 md:hidden"
+        >
+          <button
+            @click="$store.app.showSidebar = true"
+            class="text-tertiary hover:text-primary transition-colors"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+            </svg>
+          </button>
+          <span
+            class="font-sans text-[14px] font-500 text-primary"
+            x-text="$store.collections.activeCollection || 'smol-kv'"
+          ></span>
+        </div>
+
+        <div class="max-w-4xl mx-auto px-6 py-6">
+          <div data-view="welcome"></div>
+          <div data-view="browse"></div>
+          <div data-view="query"></div>
+          <div data-view="live"></div>
+          <div data-view="backups"></div>
+          <div data-view="settings"></div>
+          <div data-view="usage"></div>
+        </div>
+      </main>
+    </div>
+
+    <!-- Undo bar -->
+    <template x-data x-if="$store.app.undoAction">
+      <div class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 fade-in">
+        <div class="bg-primary text-ground font-sans text-[13px] pl-4 pr-2 py-2.5 rounded-lg shadow-lg flex items-center gap-4">
+          <span x-text="$store.app.undoAction.msg"></span>
+          <button
+            @click="$store.app.doUndo()"
+            class="font-600 text-[13px] text-ground/80 hover:text-ground px-2 py-0.5 rounded transition-colors underline underline-offset-2"
+          >Undo</button>
+          <div class="w-16 h-1 bg-ground/20 rounded-full overflow-hidden ml-1">
+            <div class="h-full bg-ground/50 rounded-full transition-all ease-linear" :style="`width: ${$store.app.undoProgress}%`"></div>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <!-- Toasts -->
+    <div x-data class="fixed bottom-4 right-4 z-50 flex flex-col gap-2 items-end">
+      <template x-for="t in $store.app.toasts" :key="t.id">
+        <div
+          class="fade-in font-sans text-[13px] px-4 py-2.5 rounded-lg shadow-lg flex items-center gap-2 max-w-sm"
+          :class="t.type === 'error' ? 'bg-danger text-white' : 'bg-surface border border-rule text-primary'"
+        >
+          <span x-text="t.msg"></span>
+          <button
+            @click="$store.app.toasts = $store.app.toasts.filter(x => x.id !== t.id)"
+            class="ml-2 opacity-60 hover:opacity-100 transition-opacity text-[11px]"
+          >✕</button>
+        </div>
+      </template>
+    </div>
+
+    <!-- Loader: injects view partials, imports Alpine ESM, calls Alpine.start() -->
+    <script type="module" src="js/loader.js"></script>
+  </body>
+</html>
