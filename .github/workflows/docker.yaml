@@ -1,13 +1,17 @@
 name: Release Image
+
 on:
   workflow_dispatch:
   release:
     types: [created]
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
+
 env:
   DOCKERHUB_REPO: ${{ vars.DOCKERHUB_USER }}/smol-kv
+
 jobs:
   build:
     strategy:
@@ -40,6 +44,7 @@ jobs:
           tags: ${{ env.DOCKERHUB_REPO }}:latest-${{ matrix.arch }}
           cache-from: type=gha,scope=smolkv-${{ github.ref }}-${{ matrix.arch }}
           cache-to: type=gha,scope=smolkv-${{ github.ref }}-${{ matrix.arch }},mode=max
+
   finalize:
     needs: build
     runs-on: ubuntu-24.04
