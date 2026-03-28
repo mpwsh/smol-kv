@@ -84,7 +84,7 @@ curl -X PUT -H "X-SECRET-KEY: verysecure" -H "Content-Type: application/json" \
 Batch import values with keys from JSON File. Using [Earth Meteorite Landings](https://data.nasa.gov/resource/y77d-th95.json) dataset.
 
 ```bash
-# Create the collection 
+# Create the collection
 curl -sX PUT -H "X-SECRET-KEY: verysecure" localhost:5050/api/landings
 # import the values using a property from the json file as key
 curl -X POST -F "file=@y77d-th95.json" -H "X-SECRET-KEY: verysecure" "http://localhost:5050/api/landings/_import?key=name"
@@ -156,7 +156,7 @@ curl -sX GET -H "X-SECRET-KEY: verysecure" http://localhost:5050/api/mycollectio
 }
 
 # Download the collection backup
-curl -o mybackup.sst http://localhost:5050/backups/mycollection-aRprhdOXoMrbrjyfd12bz.sst
+curl -o mybackup.sst http://localhost:5050/backups/mycollection-<backup-id>.sst
 
 # Upload a backup
 curl -X POST -F "file=@mybackup.sst" -H "X-SECRET-KEY: verysecure" "http://localhost:5050/api/mycollection/_backup/upload"

@@ -1,0 +1,61 @@
+<!-- ═══ USAGE VIEW ═══ -->
+<div
+  x-show="$store.app.currentView === 'usage' && $store.collections.activeCollection"
+  x-transition.opacity
+>
+  <div class="mb-4">
+    <h2 class="text-[16px] font-600 text-primary mb-1">Usage</h2>
+    <p class="text-[12px] text-tertiary">
+      Quick reference for
+      <span
+        class="text-accent"
+        x-text="$store.collections.activeCollection"
+      ></span>
+    </p>
+  </div>
+
+  <template
+    x-for="item in [
+                {title: 'Insert a document', fn: 'curlPut'},
+                {title: 'Get a document', fn: 'curlGet'},
+                {title: 'List all documents', fn: 'curlList'},
+                {title: 'Query (JSONPath)', fn: 'curlQuery'},
+                {title: 'Delete a document', fn: 'curlDelete'},
+                {title: 'Subscribe (SSE)', fn: 'curlSubscribe'},
+              ]"
+    :key="item.fn"
+  >
+    <div class="card mb-3">
+      <div class="card-header">
+        <h3 class="card-title" x-text="item.title"></h3>
+        <button
+          @click="$store.auth.copyToClipboard($store.app[item.fn](), 'Copied')"
+          class="text-[11px] text-tertiary hover:text-accent transition-colors"
+        >
+          Copy
+        </button>
+      </div>
+      <pre
+        class="font-mono text-[11px] text-secondary bg-ground rounded-md p-3 overflow-x-auto scroll-thin whitespace-pre-wrap break-all"
+        x-text="$store.app.maskKey($store.app[item.fn]())"
+      ></pre>
+    </div>
+  </template>
+
+  <!-- JavaScript example -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">JavaScript</h3>
+      <button
+        @click="$store.auth.copyToClipboard($store.app.jsExample(), 'Copied')"
+        class="text-[11px] text-tertiary hover:text-accent transition-colors"
+      >
+        Copy
+      </button>
+    </div>
+    <pre
+      class="font-mono text-[11px] text-secondary bg-ground rounded-md p-3 overflow-x-auto scroll-thin whitespace-pre-wrap break-all"
+      x-text="$store.app.maskKey($store.app.jsExample())"
+    ></pre>
+  </div>
+</div>

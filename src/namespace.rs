@@ -1,6 +1,6 @@
 use crate::{
-    auth::{self, InternalCollection, SecretKey, AUTH_HEADER_NAME},
-    kv::{KVStore, RocksDB},
+    auth::{self, extract_secret_key, InternalCollection, SecretKey},
+    kv::RocksDB,
     SECRETS_CF,
 };
 
@@ -15,63 +15,49 @@ use futures::future::{ready, Ready};
 use ring::digest;
 use std::ops::Deref;
 
-// Collection path extractor - works like Path<String> but resolves internal name
+// ── CollectionPath extractor ─────────────────────────────────────────────────
+
 #[derive(Debug, Clone)]
 pub struct CollectionPath {
-    // User-visible collection name
     pub user_collection: String,
-    // Item key from path (for /<collection>/<key> routes)
     pub path_key: Option<String>,
-    // Internal namespaced name
     pub internal_collection: String,
-
-    // Secret key if available
     pub secret_key: Option<String>,
 }
 
 impl CollectionPath {
-    // Get the user-facing name
     pub fn user_collection(&self) -> &str {
         &self.user_collection
     }
     pub fn path_key(&self) -> Option<&str> {
         self.path_key.as_deref()
     }
-    // Get the internal namespaced name for DB operations
     pub fn internal_collection(&self) -> &str {
         &self.internal_collection
     }
-
-    // Get the secret key if available
     pub fn secret_key(&self) -> Option<&str> {
         self.secret_key.as_deref()
     }
 }
 
-// Allow using CollectionPath as a string reference
 impl Deref for CollectionPath {
     type Target = str;
-
     fn deref(&self) -> &Self::Target {
         &self.internal_collection
     }
 }
 
-// Display the user-facing name
 impl std::fmt::Display for CollectionPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.user_collection)
     }
 }
 
-// Implementing FromRequest lets it work as an extractor in handler signatures
 impl FromRequest for CollectionPath {
     type Error = Error;
     type Future = Ready<Result<Self, Self::Error>>;
 
     fn from_request(req: &HttpRequest, _: &mut Payload) -> Self::Future {
-        // Get the user-facing name from path parameter
-        // Check both "name" and "collection" parameters to work with all routes
         let user_collection = match req.match_info().get("collection") {
             Some(name) => name.to_string(),
             None => {
@@ -80,17 +66,14 @@ impl FromRequest for CollectionPath {
                 )));
             }
         };
-        // Look for a key parameter
         let path_key = req.match_info().get("key").map(ToString::to_string);
 
-        // Get internal name from extensions
         let internal_collection = req
             .extensions()
             .get::<InternalCollection>()
             .map(|name| name.0.clone())
             .unwrap_or_else(|| user_collection.clone());
 
-        // Get secret key if present
         let secret_key = req.extensions().get::<SecretKey>().map(|k| k.0.clone());
 
         ready(Ok(CollectionPath {
@@ -102,7 +85,16 @@ impl FromRequest for CollectionPath {
     }
 }
 
-// Middleware for collection name resolution
+// ── Namespace middleware ──────────────────────────────────────────────────────
+//
+// Resolves user collection name → internal (namespaced) collection name.
+//
+// On PUT (creation): hash the secret key → namespace prefix
+// On other methods:  look up stored secret, or hash provided key
+//
+// The resolved key + internal name are stored in request extensions
+// so downstream middleware and handlers don't re-derive them.
+
 pub struct CollectionNamespace;
 
 impl<S, B> actix_web::dev::Transform<S, ServiceRequest> for CollectionNamespace
@@ -148,14 +140,8 @@ where
     actix_web::dev::forward_ready!(service);
 
     fn call(&self, req: ServiceRequest) -> Self::Future {
-        // Only process paths that start with /api/
+        // Only process /api/ routes
         if !req.path().starts_with("/api/") {
-            return Box::pin(self.service.call(req));
-        }
-
-        // Extract the collection name from path
-        let path_segments: Vec<&str> = req.path().split('/').collect();
-        if path_segments.len() < 3 {
             return Box::pin(self.service.call(req));
         }
 
@@ -166,71 +152,60 @@ where
 
         let user_collection_name = path_segments[2].to_string();
 
-        // Skip processing for paths that don't target a specific collection
-        if user_collection_name.is_empty() {
+        // Skip empty and system endpoints (e.g. /_collections)
+        if user_collection_name.is_empty() || user_collection_name.starts_with('_') {
             return Box::pin(self.service.call(req));
         }
 
-        // Get DB reference
         let db = match req.app_data::<Data<RocksDB>>() {
             Some(db) => db.clone(),
             None => return Box::pin(self.service.call(req)),
         };
 
-        // Get secret key from headers
-        let secret_key = req
-            .headers()
-            .get(AUTH_HEADER_NAME)
-            .and_then(|h| h.to_str().ok())
-            .map(String::from);
+        // Extract key once — header or query param
+        let secret_key = extract_secret_key(&req);
 
-        // Determine internal collection name
+        // Resolve internal collection name
         let internal_collection = if req.method() == Method::PUT && path_segments.len() == 3 {
-            // Collection creation - use the provided key or generate a new one
+            // ── Collection creation ──
+            // Use provided key or generate one
             let secret = secret_key.clone().unwrap_or_else(|| {
-                let generated_key = nanoid::nanoid!(32);
-                log::info!("Generated new secret key: {}", generated_key);
-                generated_key
+                let generated = nanoid::nanoid!(32);
+                log::info!("Generated new secret key: {}", generated);
+                generated
             });
 
             let namespace = hash_collection_namespace(&secret);
             let internal = format!("{}-{}", namespace, user_collection_name);
 
-            // Always store the secret in extensions for the handler to use
             req.extensions_mut().insert(SecretKey(secret));
-
             internal
-        } else if let Ok(secret) = db.get_cf::<auth::Secret>(SECRETS_CF, &user_collection_name) {
-            // Existing collection - use prefix of stored hash for namespace
-            let prefix = &secret.secret[..std::cmp::min(8, secret.secret.len())];
+        } else if let Ok(stored) = db.get_cf::<auth::Secret>(SECRETS_CF, &user_collection_name) {
+            // ── Stored secret found by user name ──
+            // (legacy path — secrets stored under user name)
+            let prefix = &stored.secret[..std::cmp::min(8, stored.secret.len())];
             let namespace = hash_collection_namespace(prefix);
             format!("{}-{}", namespace, user_collection_name)
-        } else if let Some(key) = &secret_key {
-            // Use provided key to try to access
+        } else if let Some(ref key) = secret_key {
+            // ── Derive from provided key ──
             let namespace = hash_collection_namespace(key);
             format!("{}-{}", namespace, user_collection_name)
         } else {
-            // Fallback to user-facing name (will likely 404 later)
+            // ── No key, no stored secret — use raw name ──
             user_collection_name.clone()
         };
 
-        // Store collection info in request extensions
         req.extensions_mut()
             .insert(InternalCollection(internal_collection));
 
-        // If we have a secret key, store it too
         if let Some(key) = secret_key {
             req.extensions_mut().insert(SecretKey(key));
         }
 
-        // Continue with the request
-        let fut = self.service.call(req);
-
-        Box::pin(fut)
+        Box::pin(self.service.call(req))
     }
 }
 
-// Hash function for namespace generation
 pub fn hash_collection_namespace(key: &str) -> String {
     let hash = digest::digest(&digest::SHA256, key.as_bytes());
     let hash_str = hex::encode(hash.as_ref());

@@ -1,0 +1,702 @@
+<!-- ═══ BROWSE VIEW ═══ -->
+<div
+  x-show="$store.app.currentView === 'browse' && $store.collections.activeCollection"
+  x-transition.opacity
+>
+  <div class="flex items-center justify-between mb-4">
+    <div class="flex items-center gap-3">
+      <h2
+        class="text-[16px] font-600 text-primary"
+        x-text="$store.collections.activeCollection"
+      ></h2>
+      <template x-if="$store.collections.collectionSize">
+        <span
+          class="font-mono text-[10px] text-quaternary px-2 py-0.5 bg-surface rounded-full border border-rule"
+          x-text="$store.collections.collectionSize.total_mb?.toFixed(2) + ' MB'"
+        ></span>
+      </template>
+    </div>
+    <div class="flex items-center gap-2">
+      <button
+        @click="$store.data.showNewKeyForm = !$store.data.showNewKeyForm"
+        class="flex items-center gap-1.5 text-[12px] text-accent hover:text-accent/80 transition-colors"
+      >
+        <svg
+          class="w-3.5 h-3.5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M12 4.5v15m7.5-7.5h-15"
+          /></svg
+        >Add key
+      </button>
+      <button
+        @click="$store.data.showImportModal = true"
+        class="flex items-center gap-1.5 text-[12px] text-tertiary hover:text-secondary transition-colors"
+        title="Import JSON"
+      >
+        <svg
+          class="w-3.5 h-3.5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+          /></svg
+        >Import
+      </button>
+    </div>
+  </div>
+
+  <!-- New key form -->
+  <div x-show="$store.data.showNewKeyForm" x-transition class="card mb-4">
+    <div class="card-header">
+      <h3 class="card-title">New key</h3>
+      <button
+        @click="$store.data.showNewKeyForm = false"
+        class="text-quaternary hover:text-secondary transition-colors"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M6 18L18 6M6 6l12 12"
+          />
+        </svg>
+      </button>
+    </div>
+    <div class="mb-3">
+      <label class="field-label">Key</label>
+      <input
+        type="text"
+        x-model="$store.data.newKeyName"
+        @keyup.enter="$store.data.createKey()"
+        placeholder="user:1"
+        spellcheck="false"
+        autocomplete="off"
+        class="field-input"
+      />
+    </div>
+    <div class="mb-3">
+      <div class="flex items-center justify-between mb-1.5">
+        <label class="field-label !mb-0">Value (JSON)</label>
+        <button
+          @click="$store.data.newKeyValue && $store.auth.copyToClipboard($store.data.newKeyValue, 'Copied')"
+          class="text-[10px] text-quaternary hover:text-secondary transition-colors"
+        >
+          Copy
+        </button>
+      </div>
+      <textarea
+        x-model="$store.data.newKeyValue"
+        @input="$store.data.validateNewKey()"
+        @keydown.tab="$store.app.handleTab($event)"
+        spellcheck="false"
+        rows="4"
+        class="json-editor"
+        :class="{ 'invalid': !$store.data.newKeyValid }"
+      ></textarea>
+      <template x-if="!$store.data.newKeyValid"
+        ><div class="font-mono text-[11px] text-danger mt-1">
+          Invalid JSON
+        </div></template
+      >
+    </div>
+    <button
+      @click="$store.data.createKey()"
+      :disabled="!$store.data.newKeyName.trim() || !$store.data.newKeyValid || $store.data.newKeyCreating"
+      class="btn-primary w-full"
+    >
+      <span x-show="$store.data.newKeyCreating" class="pulse-soft"
+        >Creating…</span
+      >
+      <span x-show="!$store.data.newKeyCreating">Create key</span>
+    </button>
+  </div>
+
+  <!-- Import modal (with preview) -->
+  <div x-show="$store.data.showImportModal" x-transition class="card mb-4">
+    <div class="card-header">
+      <h3 class="card-title">Import JSON</h3>
+      <button
+        @click="$store.data.cancelImport()"
+        class="text-quaternary hover:text-secondary transition-colors"
+      >
+        <svg
+          class="w-4 h-4"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M6 18L18 6M6 6l12 12"
+          />
+        </svg>
+      </button>
+    </div>
+
+    <!-- Step 1: file picker (before file is loaded) -->
+    <template x-if="!$store.data.importData">
+      <div>
+        <p class="text-[12px] text-tertiary mb-3">
+          Upload a JSON array. Each object becomes a document.
+        </p>
+        <label class="block w-full cursor-pointer">
+          <div
+            class="flex items-center justify-center gap-2 py-4 px-4 border-2 border-dashed border-rule rounded-lg hover:border-accent/30 transition-colors"
+          >
+            <svg
+              class="w-4 h-4 text-quaternary"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5"
+              />
+            </svg>
+            <span class="text-[12px] text-tertiary">Choose JSON file</span>
+          </div>
+          <input
+            type="file"
+            accept=".json"
+            @change="$store.data.loadImportFile($event)"
+            class="hidden"
+          />
+        </label>
+      </div>
+    </template>
+
+    <!-- Step 2: preview + key field selection (file loaded) -->
+    <template x-if="$store.data.importData">
+      <div class="fade-in">
+        <div class="flex items-center gap-2 mb-3">
+          <span
+            class="font-mono text-[11px] text-secondary"
+            x-text="$store.data.importFileName"
+          ></span>
+          <span
+            class="font-mono text-[10px] text-quaternary"
+            x-text="'· ' + $store.data.importData.length + ' items'"
+          ></span>
+        </div>
+
+        <!-- Key field picker -->
+        <template x-if="$store.data.importFields.length > 0">
+          <div class="mb-3">
+            <label class="field-label"
+              >Select a field to use as key
+              <span class="text-quaternary"
+                >(click one, or skip for auto-generated keys)</span
+              ></label
+            >
+            <div class="flex flex-wrap gap-1.5">
+              <template x-for="field in $store.data.importFields" :key="field">
+                <button
+                  @click="$store.data.pickImportField(field)"
+                  class="font-mono text-[11px] px-2.5 py-1 rounded-md border transition-colors"
+                  :class="$store.data.importKeyField === field
+                              ? 'bg-accent/15 text-accent border-accent/40'
+                              : 'text-secondary border-rule hover:border-accent/30 hover:text-primary'"
+                  x-text="field"
+                ></button>
+              </template>
+            </div>
+          </div>
+        </template>
+
+        <!-- Sample preview -->
+        <div class="mb-3">
+          <label class="field-label">Preview (first item)</label>
+          <div class="relative">
+            <template x-if="$store.data.importKeyField">
+              <div class="font-mono text-[10px] text-accent mb-1">
+                key:
+                <span
+                  x-text="$store.data.importSample[$store.data.importKeyField]"
+                ></span>
+              </div>
+            </template>
+            <div
+              class="json-view bg-ground rounded-md p-3 max-h-40 overflow-y-auto scroll-thin text-[11px]"
+              x-html="$store.app.syntaxHighlight($store.data.importSample)"
+            ></div>
+          </div>
+        </div>
+
+        <!-- Progress bar during import -->
+        <template x-if="$store.data.importLoading">
+          <div class="mb-3">
+            <div class="flex items-center justify-between mb-1">
+              <span class="font-mono text-[11px] text-secondary pulse-soft"
+                >Importing…</span
+              >
+              <span
+                class="font-mono text-[10px] text-quaternary"
+                x-text="$store.data.importInserted + ' / ' + $store.data.importTotal"
+              ></span>
+            </div>
+            <div class="w-full h-1 bg-ground rounded-full overflow-hidden">
+              <div
+                class="h-full bg-accent rounded-full transition-all"
+                :style="`width: ${$store.data.importTotal ? ($store.data.importInserted / $store.data.importTotal * 100) : 0}%`"
+              ></div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Actions -->
+        <div class="flex items-center gap-2">
+          <button
+            @click="$store.data.confirmImport()"
+            :disabled="$store.data.importLoading"
+            class="btn-primary text-[12px] !py-2"
+          >
+            <span
+              x-text="'Import ' + $store.data.importData.length + ' items'"
+            ></span>
+          </button>
+          <button
+            @click="$store.data.cancelImport()"
+            :disabled="$store.data.importLoading"
+            class="btn-secondary text-[12px] !py-2"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </template>
+  </div>
+
+  <!-- Search + sort bar -->
+  <div class="flex items-center gap-2 mb-3">
+    <div class="relative flex-1">
+      <svg
+        class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-quaternary"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+        />
+      </svg>
+      <input
+        type="text"
+        x-model="$store.data.browseSearch"
+        placeholder="Filter keys…"
+        spellcheck="false"
+        autocomplete="off"
+        class="field-input !pl-9 !py-2 !text-[12px]"
+      />
+    </div>
+    <button
+      @click="$store.data.browseOrder = $store.data.browseOrder === 'asc' ? 'desc' : 'asc'; $store.data.loadKeys()"
+      class="flex items-center gap-1 px-2.5 py-2 text-[11px] font-mono text-tertiary hover:text-primary bg-surface border border-rule rounded-md transition-colors shrink-0"
+    >
+      <svg
+        class="w-3 h-3"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="2"
+        :class="$store.data.browseOrder === 'desc' ? 'rotate-180' : ''"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M3 4.5h14.25M3 9h9.75M3 13.5h5.25m5.25-.75L17.25 9m0 0L21 12.75M17.25 9v12"
+        />
+      </svg>
+      <span x-text="$store.data.browseOrder === 'asc' ? 'A→Z' : 'Z→A'"></span>
+    </button>
+    <button
+      @click="$store.data.loadKeys()"
+      class="p-2 text-tertiary hover:text-primary bg-surface border border-rule rounded-md transition-colors shrink-0"
+      title="Refresh"
+    >
+      <svg
+        class="w-3.5 h-3.5"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"
+        />
+      </svg>
+    </button>
+    <button
+      @click="$store.app.autoRefreshEnabled ? $store.app.stopAutoRefresh() : $store.app.startAutoRefresh()"
+      class="p-2 border rounded-md transition-colors shrink-0"
+      :class="$store.app.autoRefreshEnabled ? 'text-accent bg-accent/10 border-accent/30' : 'text-tertiary hover:text-primary bg-surface border-rule'"
+      :title="$store.app.autoRefreshEnabled ? 'Stop auto-refresh' : 'Auto-refresh every 5s'"
+    >
+      <svg
+        class="w-3.5 h-3.5"
+        :class="$store.app.autoRefreshEnabled ? 'animate-spin' : ''"
+        style="animation-duration: 3s"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182"
+        />
+      </svg>
+    </button>
+  </div>
+
+  <!-- Key count + bulk bar -->
+  <div class="flex items-center gap-3 mb-3">
+    <span
+      class="font-mono text-[10px] text-quaternary"
+      x-text="$store.data.filteredKeys.length + ' keys' + ($store.data.browseSearch ? ' matching' : '')"
+    ></span>
+    <template x-if="$store.data.selected.length > 0">
+      <div class="flex items-center gap-2 ml-auto fade-in">
+        <span
+          class="font-mono text-[11px] text-accent"
+          x-text="$store.data.selected.length + ' selected'"
+        ></span>
+        <button
+          @click="$store.data.clearSelection()"
+          class="text-[11px] text-tertiary hover:text-primary transition-colors px-1.5 py-0.5 rounded hover:bg-hover"
+        >
+          Clear
+        </button>
+        <button
+          @click="$store.data.deleteSelected()"
+          class="text-[11px] text-danger hover:text-danger/80 transition-colors px-2 py-0.5 rounded bg-danger/10 hover:bg-danger/15"
+        >
+          Delete selected
+        </button>
+      </div>
+    </template>
+  </div>
+
+  <div x-show="$store.data.browseLoading" class="text-center py-12">
+    <span class="font-mono text-[12px] text-tertiary pulse-soft">Loading…</span>
+  </div>
+
+  <!-- Key list -->
+  <div x-show="!$store.data.browseLoading">
+    <div class="border border-rule rounded-lg overflow-hidden">
+      <!-- Header: select all -->
+      <div
+        class="flex items-center gap-3 px-4 py-1.5 border-b border-rule/50 bg-surface/30"
+      >
+        <label class="cb-dark shrink-0">
+          <input
+            type="checkbox"
+            :checked="$store.data.allSelected"
+            @change="$store.data.selectAll()"
+          />
+          <span></span>
+        </label>
+        <span
+          class="font-mono text-[10px] text-quaternary uppercase tracking-wider"
+          >Key</span
+        >
+      </div>
+
+      <template
+        x-for="(item, i) in $store.data.filteredKeys.slice(0, $store.data.browseShowCount)"
+        :key="item.key"
+      >
+        <div class="border-b border-rule/30 last:border-0">
+          <!-- Row: checkbox · chevron · key · preview -->
+          <div
+            class="group flex items-center gap-3 py-2.5 px-4 hover:bg-hover/50 transition-colors cursor-pointer"
+            :class="{ 'bg-accent/5': $store.data.expandedKey === item.key }"
+            @click="$store.data.toggleKey(item)"
+          >
+            <label class="cb-dark shrink-0" @click.stop>
+              <input
+                type="checkbox"
+                :checked="$store.data.isSelected(item.key)"
+                @change="$store.data.toggleSelect(item.key)"
+              />
+              <span></span>
+            </label>
+            <svg
+              class="w-3 h-3 text-quaternary shrink-0 transition-transform duration-150"
+              :class="$store.data.expandedKey === item.key ? 'rotate-90' : ''"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M8.25 4.5l7.5 7.5-7.5 7.5"
+              />
+            </svg>
+            <span
+              class="font-mono text-[12px] text-accent truncate shrink-0 max-w-[200px]"
+              x-text="item.key"
+            ></span>
+            <span
+              class="font-mono text-[11px] text-quaternary flex-1 truncate"
+              x-show="$store.data.expandedKey !== item.key"
+              x-text="$store.app.previewValue(item.value)"
+            ></span>
+            <!-- Row icons (visible on hover, hidden when expanded) -->
+            <div
+              class="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+              x-show="$store.data.expandedKey !== item.key"
+            >
+              <button
+                @click.stop="$store.auth.copyToClipboard(JSON.stringify(item.value, null, 2), 'Copied')"
+                class="p-1 text-quaternary hover:text-secondary transition-colors rounded"
+                title="Copy"
+              >
+                <svg
+                  class="w-3.5 h-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"
+                  />
+                </svg>
+              </button>
+              <button
+                @click.stop="$store.data.editKey(item)"
+                class="p-1 text-quaternary hover:text-accent transition-colors rounded"
+                title="Edit"
+              >
+                <svg
+                  class="w-3.5 h-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
+                  />
+                </svg>
+              </button>
+              <button
+                @click.stop="$store.data.deleteKey(item.key)"
+                class="p-1 text-quaternary hover:text-danger transition-colors rounded"
+                title="Delete"
+              >
+                <svg
+                  class="w-3.5 h-3.5"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Expanded panel -->
+          <template x-if="$store.data.expandedKey === item.key">
+            <div class="px-4 pb-4 pt-1 bg-surface/50 fade-in">
+              <div class="flex items-center justify-between mb-2">
+                <span
+                  class="font-mono text-[9px] text-quaternary px-1.5 py-0.5 bg-ground rounded uppercase tracking-wider"
+                  x-text="$store.data.editorMode"
+                ></span>
+                <div class="flex items-center gap-0.5">
+                  <template x-if="$store.data.editorMode === 'view'">
+                    <div class="flex items-center gap-0.5">
+                      <!-- Copy -->
+                      <button
+                        @click.stop="$store.auth.copyToClipboard(JSON.stringify(item.value, null, 2), 'Copied')"
+                        class="p-1.5 text-quaternary hover:text-secondary transition-colors rounded hover:bg-hover"
+                        title="Copy JSON"
+                      >
+                        <svg
+                          class="w-3.5 h-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"
+                          />
+                        </svg>
+                      </button>
+                      <!-- Edit -->
+                      <button
+                        @click.stop="$store.data.startEdit()"
+                        class="p-1.5 text-quaternary hover:text-accent transition-colors rounded hover:bg-hover"
+                        title="Edit"
+                      >
+                        <svg
+                          class="w-3.5 h-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10"
+                          />
+                        </svg>
+                      </button>
+                      <!-- Delete -->
+                      <button
+                        @click.stop="$store.data.deleteKey(item.key)"
+                        class="p-1.5 text-quaternary hover:text-danger transition-colors rounded hover:bg-hover"
+                        title="Delete"
+                      >
+                        <svg
+                          class="w-3.5 h-3.5"
+                          fill="none"
+                          viewBox="0 0 24 24"
+                          stroke="currentColor"
+                          stroke-width="2"
+                        >
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                          />
+                        </svg>
+                      </button>
+                    </div>
+                  </template>
+                  <template x-if="$store.data.editorMode === 'edit'">
+                    <div class="flex items-center gap-1">
+                      <button
+                        @click.stop="$store.data.formatEditor()"
+                        class="text-[11px] text-tertiary hover:text-primary transition-colors px-2 py-1 rounded hover:bg-hover"
+                      >
+                        Format
+                      </button>
+                      <button
+                        @click.stop="$store.data.cancelEdit()"
+                        class="text-[11px] text-tertiary hover:text-primary transition-colors px-2 py-1 rounded hover:bg-hover"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        @click.stop="$store.data.saveEditor()"
+                        :disabled="!$store.data.editorValid || $store.data.editorSaving"
+                        class="text-[11px] text-accent hover:text-accent/80 transition-colors px-2.5 py-1 rounded bg-accent/10 hover:bg-accent/15 disabled:opacity-40"
+                      >
+                        <span
+                          x-show="$store.data.editorSaving"
+                          class="pulse-soft"
+                          >Saving…</span
+                        >
+                        <span x-show="!$store.data.editorSaving">Save</span>
+                      </button>
+                    </div>
+                  </template>
+                </div>
+              </div>
+              <!-- View -->
+              <template x-if="$store.data.editorMode === 'view'">
+                <div
+                  class="json-view bg-ground rounded-md p-3 max-h-[50vh] overflow-y-auto scroll-thin"
+                  x-html="$store.app.syntaxHighlight(item.value)"
+                ></div>
+              </template>
+              <!-- Edit -->
+              <template x-if="$store.data.editorMode === 'edit'">
+                <div>
+                  <textarea
+                    x-model="$store.data.editorText"
+                    @input="$store.data.validateEditor()"
+                    @keydown.tab="$store.app.handleTab($event)"
+                    @keydown.ctrl.s.prevent="$store.data.saveEditor()"
+                    @keydown.meta.s.prevent="$store.data.saveEditor()"
+                    @click.stop
+                    spellcheck="false"
+                    class="json-editor min-h-[200px]"
+                    :class="{ 'invalid': !$store.data.editorValid }"
+                  ></textarea>
+                  <div class="flex items-center justify-between mt-1.5">
+                    <template x-if="!$store.data.editorValid"
+                      ><span class="font-mono text-[11px] text-danger"
+                        >Invalid JSON</span
+                      ></template
+                    >
+                    <span class="font-mono text-[10px] text-quaternary ml-auto"
+                      >⌘S to save · Tab to indent</span
+                    >
+                  </div>
+                </div>
+              </template>
+            </div>
+          </template>
+        </div>
+      </template>
+      <template
+        x-if="!$store.data.browseLoading && $store.data.filteredKeys.length === 0"
+      >
+        <div class="text-center py-10">
+          <p class="font-mono text-[12px] text-quaternary">No keys found</p>
+        </div>
+      </template>
+    </div>
+    <template
+      x-if="$store.data.filteredKeys.length > $store.data.browseShowCount"
+    >
+      <button
+        @click="$store.data.browseShowCount += 50"
+        class="w-full py-3 mt-2 text-[12px] text-tertiary hover:text-primary transition-colors"
+      >
+        Show more (<span
+          x-text="$store.data.filteredKeys.length - $store.data.browseShowCount"
+        ></span>
+        remaining)
+      </button>
+    </template>
+  </div>
+</div>

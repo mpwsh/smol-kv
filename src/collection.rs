@@ -2,23 +2,20 @@ use crate::{
     auth::*,
     error::ApiError,
     key::Operation,
-    kv::{Direction, KVStore, KvStoreError, RocksDB},
-    namespace::CollectionPath,
+    kv::{Direction, KvStoreError, RocksDB},
+    namespace::{hash_collection_namespace, CollectionPath},
     sub::*,
     SECRETS_CF,
 };
 
-use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{sync::Arc, time::SystemTime, time::UNIX_EPOCH};
 
 use actix_web::{
     web::{Data, Json, Query},
     HttpMessage, HttpRequest, HttpResponse,
 };
 use chrono::Utc;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use bytes::Bytes;
@@ -28,6 +25,7 @@ struct BatchItem {
     key: String,
     value: Value,
 }
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct RangeQuery {
     pub from: Option<String>,
@@ -58,6 +56,11 @@ impl Default for RangeQuery {
         }
     }
 }
+#[derive(Debug, Serialize)]
+struct CollectionInfo {
+    name: String,
+    internal_name: String,
+}
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub enum SortOrder {
@@ -79,6 +82,15 @@ impl From<SortOrder> for Direction {
 fn def_true() -> bool {
     true
 }
+
+/// Query params for collection creation — supports optional TTL.
+#[derive(Debug, Deserialize)]
+pub struct CreateCollectionQuery {
+    /// TTL in seconds for keys in this collection.
+    /// If omitted, keys never expire.
+    pub ttl: Option<u64>,
+}
+
 pub async fn exists(name: CollectionPath, db: Data<RocksDB>) -> HttpResponse {
     if db.cf_exists(&name) {
         HttpResponse::Ok().finish()
@@ -90,6 +102,7 @@ pub async fn exists(name: CollectionPath, db: Data<RocksDB>) -> HttpResponse {
 pub async fn create(
     name: CollectionPath,
     req: HttpRequest,
+    query: Query<CreateCollectionQuery>,
     db: Data<RocksDB>,
 ) -> Result<HttpResponse, ApiError> {
     let collection_name = name.internal_collection();
@@ -98,19 +111,29 @@ pub async fn create(
     } else {
         let timestamp = Utc::now().to_rfc3339();
 
-        // Get the secret key that was set by the middleware
         let secret_key = match req.extensions().get::<SecretKey>() {
             Some(secret) => secret.0.clone(),
             None => {
-                // This should rarely happen if middleware is working correctly
                 return Err(ApiError::internal(
                     "Secret key not found in request extensions",
                     "Authentication middleware may not be configured correctly",
                 ));
             }
         };
-        db.create_cf(collection_name)
-            .map_err(|e| ApiError::internal("Failed to create collection", e))?;
+
+        // Create CF with or without TTL
+        if let Some(ttl_secs) = query.ttl {
+            db.create_cf_with_ttl(collection_name, ttl_secs)
+                .map_err(|e| ApiError::internal("Failed to create collection with TTL", e))?;
+            log::info!(
+                "Created collection '{}' with TTL of {}s",
+                name.user_collection(),
+                ttl_secs
+            );
+        } else {
+            db.create_cf(collection_name)
+                .map_err(|e| ApiError::internal("Failed to create collection", e))?;
+        }
 
         if let Err(e) = db.create_cf(&format!("{collection_name}-backups")) {
             log::error!("Failed to create backups collection: {}", e);
@@ -173,48 +196,108 @@ pub async fn drop(collection: CollectionPath, db: Data<RocksDB>) -> Result<HttpR
     }
 }
 
-fn execute_range_query<T: DeserializeOwned + Serialize>(
-    db: &RocksDB,
-    collection: &str,
-    range_query: &RangeQuery,
-) -> Result<Value, KvStoreError> {
-    let from = range_query.from.as_deref().unwrap_or("");
-    let to = range_query.to.as_deref().unwrap_or("\u{fff0}");
-    let limit = range_query.limit.unwrap_or(usize::MAX);
-    let direction = range_query
-        .order
-        .clone()
-        .map(Into::into)
-        .unwrap_or(Direction::Forward);
+/// Compact a collection to trigger TTL cleanup.
+pub async fn compact(
+    collection: CollectionPath,
+    db: Data<RocksDB>,
+) -> Result<HttpResponse, ApiError> {
+    let internal_collection = collection.internal_collection();
+    if !db.cf_exists(internal_collection) {
+        return Ok(HttpResponse::NotFound().json(format!(
+            "Collection {} does not exist",
+            collection.user_collection()
+        )));
+    }
 
-    // Use the appropriate method based on the keys flag
-    let result = if range_query.keys {
-        let items = db.get_range_cf_with_keys::<T>(collection, from, to, limit, direction)?;
-        serde_json::to_value(items).map_err(|e| KvStoreError::SerializationError(e.to_string()))?
-    } else {
-        let items = db.get_range_cf::<T>(collection, from, to, limit, direction)?;
-        serde_json::to_value(items).map_err(|e| KvStoreError::SerializationError(e.to_string()))?
-    };
+    db.compact_cf(internal_collection)
+        .map_err(|e| ApiError::internal("Failed to compact collection", e))?;
 
-    Ok(result)
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "message": format!("Collection {} compacted", collection.user_collection())
+    })))
 }
 
-// Same for JSONPath queries
-fn execute_query<T: DeserializeOwned + Serialize>(
-    db: &RocksDB,
-    collection: &str,
-    query_str: &str,
-    include_keys: bool,
-) -> Result<Value, KvStoreError> {
-    let result = if include_keys {
-        let items = db.query_cf_with_keys::<T>(collection, query_str)?;
-        serde_json::to_value(items).map_err(|e| KvStoreError::SerializationError(e.to_string()))?
-    } else {
-        let items = db.query_cf::<T>(collection, query_str)?;
-        serde_json::to_value(items).map_err(|e| KvStoreError::SerializationError(e.to_string()))?
+/// Get the size of a collection.
+pub async fn size(collection: CollectionPath, db: Data<RocksDB>) -> Result<HttpResponse, ApiError> {
+    let internal_collection = collection.internal_collection();
+    if !db.cf_exists(internal_collection) {
+        return Ok(HttpResponse::NotFound().json(format!(
+            "Collection {} does not exist",
+            collection.user_collection()
+        )));
+    }
+
+    let cf_size = db
+        .get_cf_size(internal_collection)
+        .map_err(|e| ApiError::internal("Failed to get collection size", e))?;
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "collection": collection.user_collection(),
+        "total_mb": cf_size.total_mb(),
+        "sst_bytes": cf_size.sst_bytes,
+        "mem_table_bytes": cf_size.mem_table_bytes,
+        "blob_bytes": cf_size.blob_bytes,
+    })))
+}
+
+/// List all collections belonging to the caller's namespace.
+///
+/// `GET /api/_collections` with `X-SECRET-KEY` header.
+///
+/// Scans the secrets CF for entries whose internal name starts with the
+/// caller's namespace hash prefix, then returns the user-facing names.
+pub async fn list_collections(
+    req: HttpRequest,
+    db: Data<RocksDB>,
+) -> Result<HttpResponse, ApiError> {
+    let secret_key = match req
+        .headers()
+        .get(AUTH_HEADER_NAME)
+        .and_then(|h| h.to_str().ok())
+    {
+        Some(key) => key.to_string(),
+        None => return Ok(HttpResponse::Ok().json(Vec::<CollectionInfo>::new())),
     };
 
-    Ok(result)
+    // Same hash as namespace middleware uses during creation
+    let namespace = hash_collection_namespace(&secret_key);
+    let prefix = format!("{}-", namespace);
+
+    // Scan all entries in the secrets CF
+    let all_entries: Vec<serde_json::Value> = db
+        .get_range_cf(
+            SECRETS_CF,
+            "",
+            "\u{fff0}",
+            usize::MAX,
+            Direction::Forward,
+            true,
+        )
+        .map_err(|e| ApiError::internal("Failed to scan collections", e))?;
+
+    let mut collections = Vec::new();
+
+    for entry in &all_entries {
+        if let Some(key) = entry.get("key").and_then(|k| k.as_str()) {
+            // Match entries whose key starts with our namespace prefix
+            if let Some(user_name) = key.strip_prefix(&prefix) {
+                // Skip backup CFs and metadata entries
+                if user_name.ends_with("-backups") || key.starts_with("_cf_meta:") {
+                    continue;
+                }
+
+                // Verify this collection actually exists as a CF
+                if db.cf_exists(key) {
+                    collections.push(CollectionInfo {
+                        name: user_name.to_string(),
+                        internal_name: key.to_string(),
+                    });
+                }
+            }
+        }
+    }
+
+    Ok(HttpResponse::Ok().json(collections))
 }
 
 pub async fn list(
@@ -234,29 +317,14 @@ pub async fn list(
         SortOrder::Descending => Direction::Reverse,
     };
 
-    // Convert the results to serde_json::Value to handle the type difference
-    let result = if query.keys {
-        // With keys (key-value pairs)
-        let items = db
-            .get_range_cf_with_keys::<Value>(&collection, from, to, limit, direction)
-            .map_err(|e| ApiError::internal("Failed to fetch items with keys", e))?;
-
-        serde_json::to_value(items)
-            .map_err(|e| ApiError::internal("Failed to serialize items", e))?
-    } else {
-        // Without keys (values only)
-        let items = db
-            .get_range_cf::<Value>(&collection, from, to, limit, direction)
-            .map_err(|e| ApiError::internal("Failed to fetch items", e))?;
-
-        serde_json::to_value(items)
-            .map_err(|e| ApiError::internal("Failed to serialize items", e))?
-    };
+    // New API: get_range_cf takes include_keys as last param and returns Vec<Value>
+    let result = db
+        .get_range_cf(&collection, from, to, limit, direction, query.keys)
+        .map_err(|e| ApiError::internal("Failed to fetch items", e))?;
 
     Ok(HttpResponse::Ok().json(result))
 }
 
-// With helpers, the endpoints become much cleaner:
 pub async fn query(
     collection: CollectionPath,
     query: Json<RangeQuery>,
@@ -266,17 +334,21 @@ pub async fn query(
         return Ok(HttpResponse::NotFound().finish());
     }
 
-    if !db.cf_exists(&collection) {
-        return Ok(HttpResponse::NotFound().finish());
-    }
-
     let result = if let Some(query_str) = &query.query {
-        // If a JSONPath query is provided, use it
-        execute_query::<Value>(&db, &collection, query_str, query.keys)
+        // New API: query_cf takes include_keys as last param
+        db.query_cf(&collection, query_str, query.keys)
             .map_err(|e| ApiError::internal("Failed to execute query", e))?
     } else {
-        // Otherwise, perform a range query
-        execute_range_query::<Value>(&db, &collection, &query)
+        let from = query.from.as_deref().unwrap_or("");
+        let to = query.to.as_deref().unwrap_or("\u{fff0}");
+        let limit = query.limit.unwrap_or(usize::MAX);
+        let direction = query
+            .order
+            .clone()
+            .map(Into::into)
+            .unwrap_or(Direction::Forward);
+
+        db.get_range_cf(&collection, from, to, limit, direction, query.keys)
             .map_err(|e| ApiError::internal("Failed to execute range query", e))?
     };
 
@@ -302,7 +374,6 @@ pub async fn create_batch(
 
     match db.batch_insert_cf(collection, &batch_items) {
         Ok(_) => {
-            // Notify subscribers for each item in the batch
             for item in &items {
                 let event = CollectionEvent {
                     operation: Operation::Create,
@@ -317,25 +388,24 @@ pub async fn create_batch(
         Err(e) => Err(ApiError::internal("Failed to insert batch", e)),
     }
 }
+
 pub async fn subscribe(
     path: CollectionPath,
     sub_manager: Data<Arc<SubscriptionManager>>,
 ) -> Result<HttpResponse, ApiError> {
-    let internal_collection = path.internal_collection().to_string(); // Clone to own the string
-    let user_collection = path.user_collection().to_string(); // Clone to own the string
+    let internal_collection = path.internal_collection().to_string();
+    let user_collection = path.user_collection().to_string();
     let sender = sub_manager
         .get_or_create_channel(&internal_collection)
         .await;
     let mut receiver = sender.subscribe();
 
-    // Log that a new subscriber connected
     log::info!(
         "New subscriber connected to collection '{}'",
         internal_collection
     );
 
     let stream = async_stream::stream! {
-        // Send initial connection message
         let init_message = serde_json::json!({"type": "connected", "collection": user_collection});
         let sse_msg = format!("data: {}\n\n", serde_json::to_string(&init_message).unwrap_or_default());
         yield Ok::<_, actix_web::Error>(Bytes::from(sse_msg));
@@ -343,13 +413,11 @@ pub async fn subscribe(
         loop {
             match receiver.recv().await {
                 Ok(event) => {
-                    // Create new event with timestamp
                     let timestamp = SystemTime::now()
                         .duration_since(UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis();
 
-                    // Convert event to Value, add timestamp, convert back
                     let mut event_json = serde_json::to_value(&event)?;
                     if let Some(value) = event_json.get_mut("value") {
                         if let Some(obj) = value.as_object_mut() {
@@ -357,14 +425,12 @@ pub async fn subscribe(
                         }
                     }
 
-                    // Format as proper SSE message with data: prefix and double newline
                     let msg = format!("data: {}\n\n", serde_json::to_string(&event_json).unwrap_or_default());
                     log::debug!("Sending SSE message: {}", msg);
                     yield Ok::<_, actix_web::Error>(Bytes::from(msg));
                 },
                 Err(e) => {
                     log::error!("Error receiving from broadcast channel: {:?}", e);
-                    // For lagged errors, we can continue
                     match e {
                         tokio::sync::broadcast::error::RecvError::Lagged(n) => {
                             log::warn!("Receiver lagged and missed {} messages", n);
@@ -379,16 +445,13 @@ pub async fn subscribe(
             }
         }
 
-        // This message won't be sent because we're breaking out of the loop,
-        // but it's here to show that the stream ending is expected
         log::info!("SSE stream closed for collection '{}'", internal_collection);
     };
 
-    // Set proper headers for SSE
     Ok(HttpResponse::Ok()
         .insert_header(("Content-Type", "text/event-stream"))
         .insert_header(("Cache-Control", "no-cache"))
         .insert_header(("Connection", "keep-alive"))
-        .insert_header(("X-Accel-Buffering", "no")) // Disable proxy buffering
+        .insert_header(("X-Accel-Buffering", "no"))
         .streaming(stream))
 }

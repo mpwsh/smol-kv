@@ -1,0 +1,388 @@
+<!-- ─── SIDEBAR ─── -->
+<aside
+  class="fixed md:relative z-30 flex flex-col h-screen w-64 bg-[#0d0d0d] border-r border-rule shrink-0 transition-transform duration-200 md:translate-x-0"
+  :class="$store.app.showSidebar ? 'translate-x-0' : '-translate-x-64'"
+>
+  <!-- Logo + logout -->
+  <div class="flex items-center justify-between px-5 pt-5 pb-4">
+    <div class="flex items-center gap-3">
+      <div
+        class="w-7 h-7 rounded-md bg-accent/10 flex items-center justify-center"
+      >
+        <svg
+          class="w-4 h-4 text-accent"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"
+          />
+        </svg>
+      </div>
+      <div>
+        <h1
+          class="text-[15px] font-600 text-primary leading-none tracking-tight"
+        >
+          smol-kv
+        </h1>
+        <p class="font-mono text-[10px] text-quaternary mt-0.5">
+          document store
+        </p>
+      </div>
+    </div>
+    <button
+      @click="$store.auth.logout()"
+      class="p-1.5 text-quaternary hover:text-danger transition-colors rounded"
+      title="Disconnect"
+    >
+      <svg
+        class="w-4 h-4"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9"
+        />
+      </svg>
+    </button>
+  </div>
+
+  <!-- Key indicator -->
+  <div class="px-3 mb-3">
+    <div
+      class="flex items-center gap-2 px-2.5 py-2 bg-ground rounded-md border border-rule/50"
+    >
+      <svg
+        class="w-3 h-3 text-quaternary shrink-0"
+        fill="none"
+        viewBox="0 0 24 24"
+        stroke="currentColor"
+        stroke-width="2"
+      >
+        <path
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          d="M15.75 5.25a3 3 0 013 3m3 0a6 6 0 01-7.029 5.912c-.563-.097-1.159.026-1.563.43L10.5 17.25H8.25v2.25H6v2.25H2.25v-2.818c0-.597.237-1.17.659-1.591l6.499-6.499c.404-.404.527-1 .43-1.563A6 6 0 1121.75 8.25z"
+        />
+      </svg>
+      <span
+        class="font-mono text-[10px] text-quaternary truncate"
+        x-text="$store.auth.accessKey.slice(0, 8) + '••••••••'"
+      ></span>
+      <button
+        @click="$store.auth.copyToClipboard($store.auth.accessKey, 'Key copied')"
+        class="ml-auto p-0.5 text-quaternary hover:text-secondary transition-colors rounded shrink-0"
+        title="Copy key"
+      >
+        <svg
+          class="w-3 h-3"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          stroke-width="2"
+        >
+          <path
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184"
+          />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="h-px bg-rule mx-3 mb-2"></div>
+
+  <!-- Collections list -->
+  <nav class="flex-1 overflow-y-auto scroll-thin px-2 pb-4">
+    <div class="mb-1">
+      <div class="flex items-center justify-between px-2 mb-1">
+        <span
+          class="text-[10px] font-mono text-quaternary uppercase tracking-wider"
+          >Collections</span
+        >
+        <button
+          @click="$store.collections.showCreateForm = !$store.collections.showCreateForm"
+          class="p-0.5 text-quaternary hover:text-accent transition-colors rounded"
+          title="New collection"
+        >
+          <svg
+            class="w-3.5 h-3.5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="2"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M12 4.5v15m7.5-7.5h-15"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Create collection form -->
+      <div
+        x-show="$store.collections.showCreateForm"
+        x-transition
+        class="mx-1 mb-2 p-2.5 bg-ground rounded-md border border-rule"
+      >
+        <input
+          type="text"
+          x-model="$store.collections.newName"
+          @keyup.enter="$store.collections.create()"
+          placeholder="collection name"
+          spellcheck="false"
+          autocomplete="off"
+          class="w-full bg-surface border border-rule rounded text-[12px] font-mono text-primary px-2.5 py-1.5 outline-none focus:border-accent/50 mb-2 placeholder:text-quaternary"
+        />
+        <input
+          type="number"
+          x-model="$store.collections.newTtl"
+          placeholder="TTL (seconds, optional)"
+          min="0"
+          class="w-full bg-surface border border-rule rounded text-[12px] font-mono text-primary px-2.5 py-1.5 outline-none focus:border-accent/50 mb-2 placeholder:text-quaternary"
+        />
+        <div class="flex gap-1.5">
+          <button
+            @click="$store.collections.create()"
+            :disabled="!$store.collections.newName.trim() || $store.collections.createLoading"
+            class="flex-1 bg-accent/10 text-accent text-[11px] font-500 py-1.5 rounded hover:bg-accent/20 disabled:opacity-40 transition-colors"
+          >
+            <span x-show="$store.collections.createLoading" class="pulse-soft"
+              >Creating…</span
+            >
+            <span x-show="!$store.collections.createLoading">Create</span>
+          </button>
+          <button
+            @click="$store.collections.showCreateForm = false"
+            class="px-2.5 py-1.5 text-[11px] text-quaternary hover:text-secondary transition-colors rounded"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+
+      <!-- Collection items -->
+      <div class="space-y-0.5">
+        <template x-for="col in $store.collections.list" :key="col.name">
+          <button
+            @click="$store.collections.select(col.name)"
+            class="w-full group flex items-center gap-2 px-2.5 py-1.5 rounded-md text-left transition-all text-[13px]"
+            :class="$store.collections.activeCollection === col.name ? 'bg-accent/10 text-accent' : 'text-secondary hover:bg-hover hover:text-primary'"
+          >
+            <svg
+              class="w-3.5 h-3.5 shrink-0 opacity-50"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375"
+              />
+            </svg>
+            <span class="truncate" x-text="col.name"></span>
+            <button
+              @click.stop="$store.collections.drop(col.name)"
+              class="ml-auto opacity-0 group-hover:opacity-100 p-0.5 text-quaternary hover:text-danger transition-all rounded shrink-0"
+              title="Drop"
+            >
+              <svg
+                class="w-3 h-3"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                />
+              </svg>
+            </button>
+          </button>
+        </template>
+
+        <template x-if="$store.collections.list.length === 0">
+          <div class="px-2.5 py-3 text-center">
+            <p class="text-[11px] text-quaternary">No collections yet</p>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div class="h-px bg-rule mx-1 my-3"></div>
+
+    <!-- Views nav -->
+    <template x-if="$store.collections.activeCollection">
+      <div class="space-y-0.5">
+        <button
+          @click="$store.app.navigate('browse')"
+          class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-all"
+          :class="$store.app.currentView === 'browse' ? 'bg-hover text-primary' : 'text-tertiary hover:bg-hover/50 hover:text-secondary'"
+        >
+          <svg
+            class="w-4 h-4 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"
+            />
+          </svg>
+          <span>Browse</span>
+          <span
+            class="ml-auto font-mono text-[10px] text-quaternary"
+            x-text="$store.data.browseKeys.length"
+          ></span>
+        </button>
+        <button
+          @click="$store.app.navigate('query')"
+          class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-all"
+          :class="$store.app.currentView === 'query' ? 'bg-hover text-primary' : 'text-tertiary hover:bg-hover/50 hover:text-secondary'"
+        >
+          <svg
+            class="w-4 h-4 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z"
+            />
+          </svg>
+          <span>Query</span>
+        </button>
+        <button
+          @click="$store.app.navigate('live')"
+          class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-all"
+          :class="$store.app.currentView === 'live' ? 'bg-hover text-primary' : 'text-tertiary hover:bg-hover/50 hover:text-secondary'"
+        >
+          <svg
+            class="w-4 h-4 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
+            />
+          </svg>
+          <span>Live</span>
+          <template x-if="$store.live.connected"
+            ><span class="ml-auto"
+              ><span class="status-dot connected"></span></span
+          ></template>
+        </button>
+        <button
+          @click="$store.app.navigate('backups')"
+          class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-all"
+          :class="$store.app.currentView === 'backups' ? 'bg-hover text-primary' : 'text-tertiary hover:bg-hover/50 hover:text-secondary'"
+        >
+          <svg
+            class="w-4 h-4 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5m8.25 3v6.75m0 0l-3-3m3 3l3-3M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z"
+            />
+          </svg>
+          <span>Backups</span>
+        </button>
+        <button
+          @click="$store.app.navigate('settings')"
+          class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-all"
+          :class="$store.app.currentView === 'settings' ? 'bg-hover text-primary' : 'text-tertiary hover:bg-hover/50 hover:text-secondary'"
+        >
+          <svg
+            class="w-4 h-4 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z"
+            />
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            />
+          </svg>
+          <span>Settings</span>
+        </button>
+        <button
+          @click="$store.app.navigate('usage')"
+          class="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-[13px] transition-all"
+          :class="$store.app.currentView === 'usage' ? 'bg-hover text-primary' : 'text-tertiary hover:bg-hover/50 hover:text-secondary'"
+        >
+          <svg
+            class="w-4 h-4 shrink-0"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            stroke-width="1.5"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5"
+            />
+          </svg>
+          <span>Usage</span>
+        </button>
+      </div>
+    </template>
+  </nav>
+
+  <!-- Sidebar footer -->
+  <div class="px-3 py-3 border-t border-rule">
+    <template x-if="$store.collections.activeCollection">
+      <div class="flex items-center gap-2 px-1">
+        <span class="status-dot connected"></span>
+        <span
+          class="font-mono text-[10px] text-tertiary truncate"
+          x-text="$store.collections.activeCollection"
+        ></span>
+      </div>
+    </template>
+    <template x-if="!$store.collections.activeCollection">
+      <div class="px-1">
+        <span class="font-mono text-[10px] text-quaternary"
+          >No collection selected</span
+        >
+      </div>
+    </template>
+  </div>
+</aside>

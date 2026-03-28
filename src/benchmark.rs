@@ -1,4 +1,4 @@
-use crate::kv::{Direction, KVStore, RocksDB};
+use crate::kv::{Direction, RocksDB};
 use rand::Rng;
 
 use actix_web::{
@@ -13,15 +13,15 @@ use std::time::Instant;
 #[derive(Deserialize)]
 pub struct BenchmarkParams {
     #[serde(default = "default_count")]
-    count: usize, // Number of records to generate
+    count: usize,
     #[serde(default = "default_size")]
-    size: usize, // Size of each value in bytes (approximate)
+    size: usize,
     #[serde(default = "default_batch_size")]
-    batch_size: usize, // How many operations per batch
+    batch_size: usize,
     #[serde(default = "default_query_count")]
-    query_count: usize, // Number of queries to run
+    query_count: usize,
     #[serde(default)]
-    include_storage: bool, // Whether to include storage metrics
+    include_storage: bool,
 }
 
 fn default_count() -> usize {
@@ -73,7 +73,6 @@ fn generate_user(id: usize) -> Value {
     })
 }
 
-// Get collection size and metrics
 async fn get_storage_metrics(db: &RocksDB, cf_name: &str) -> Value {
     match db.get_cf_size(cf_name) {
         Ok(size) => json!({
@@ -88,7 +87,6 @@ async fn get_storage_metrics(db: &RocksDB, cf_name: &str) -> Value {
     }
 }
 
-// Generate sample JSONPath queries
 fn generate_queries() -> Vec<(String, String)> {
     vec![
         ("All users".into(), "$[*]".into()),
@@ -125,7 +123,6 @@ pub async fn start(
     params: Query<BenchmarkParams>,
     req: HttpRequest,
 ) -> HttpResponse {
-    // Auth check
     let token_header = req
         .headers()
         .get("X-ADMIN-TOKEN")
@@ -138,7 +135,6 @@ pub async fn start(
     let benchmark_start = Instant::now();
     let cf_name = "benchmark_cf";
 
-    // Ensure column family exists
     if !db.cf_exists(cf_name) {
         if let Err(e) = db.create_cf(cf_name) {
             return HttpResponse::InternalServerError()
@@ -146,13 +142,9 @@ pub async fn start(
         }
     }
 
-    // Generate test data
     let records: Vec<Value> = (0..params.count).map(generate_user).collect();
-
-    // Calculate approximate size of a sample record
     let sample_size = serde_json::to_string(&records[0]).unwrap_or_default().len();
 
-    // Results container
     let mut results = json!({
         "params": {
             "count": params.count,
@@ -178,12 +170,12 @@ pub async fn start(
         "storage": {}
     });
 
+    // 1. Inserts
     let insert_start = Instant::now();
     let mut success_count = 0;
     let mut batch_id = 0;
 
     for chunk in records.chunks(params.batch_size) {
-        // Pre-allocate the strings so they don't go out of scope
         let keys: Vec<String> = chunk
             .iter()
             .map(|_| {
@@ -193,7 +185,6 @@ pub async fn start(
             })
             .collect();
 
-        // Now create the batch with references to the stored strings
         let batch_items: Vec<_> = keys
             .iter()
             .zip(chunk.iter())
@@ -210,14 +201,14 @@ pub async fn start(
     results["operations"]["inserts"]["success"] = json!(success_count);
     results["operations"]["inserts"]["duration_ms"] = json!(insert_duration.as_millis());
 
-    // 2. JSONPath Queries (without keys)
+    // 2. JSONPath Queries (values only — include_keys=false)
     let queries = generate_queries();
     let query_start = Instant::now();
     let mut query_success = 0;
     let mut total_results = 0;
 
     for (_, query) in &queries[0..std::cmp::min(queries.len(), params.query_count)] {
-        if let Ok(results_vec) = db.query_cf::<Value>(cf_name, query) {
+        if let Ok(results_vec) = db.query_cf(cf_name, query, false) {
             query_success += 1;
             total_results += results_vec.len();
         }
@@ -236,13 +227,13 @@ pub async fn start(
         json!(query_duration.as_millis());
     results["operations"]["queries"]["values_only"]["avg_results"] = json!(avg_results);
 
-    // 3. JSONPath Queries (with keys)
+    // 3. JSONPath Queries (with keys — include_keys=true)
     let query_keys_start = Instant::now();
     let mut query_keys_success = 0;
     let mut total_keys_results = 0;
 
     for (_, query) in &queries[0..std::cmp::min(queries.len(), params.query_count)] {
-        if let Ok(results_vec) = db.query_cf_with_keys::<Value>(cf_name, query) {
+        if let Ok(results_vec) = db.query_cf(cf_name, query, true) {
             query_keys_success += 1;
             total_keys_results += results_vec.len();
         }
@@ -261,20 +252,20 @@ pub async fn start(
         json!(query_keys_duration.as_millis());
     results["operations"]["queries"]["with_keys"]["avg_results"] = json!(avg_keys_results);
 
-    // 4. Range Queries (without keys)
+    // 4. Range Queries (values only — include_keys=false)
     let range_start = Instant::now();
     let mut range_success = 0;
     let mut total_range_results = 0;
 
-    // Test different range sizes
     let range_sizes = [10, 50, 100, 500];
     for limit in &range_sizes[0..std::cmp::min(range_sizes.len(), params.query_count)] {
-        if let Ok(results_vec) = db.get_range_cf::<Value>(
+        if let Ok(results_vec) = db.get_range_cf(
             cf_name,
             "0",
             &params.count.to_string(),
             *limit,
             Direction::Forward,
+            false,
         ) {
             range_success += 1;
             total_range_results += results_vec.len();
@@ -294,19 +285,19 @@ pub async fn start(
         json!(range_duration.as_millis());
     results["operations"]["range_queries"]["values_only"]["avg_results"] = json!(avg_range_results);
 
-    // 5. Range Queries (with keys)
+    // 5. Range Queries (with keys — include_keys=true)
     let range_keys_start = Instant::now();
     let mut range_keys_success = 0;
     let mut total_range_keys_results = 0;
 
-    // Test different range sizes
     for limit in &range_sizes[0..std::cmp::min(range_sizes.len(), params.query_count)] {
-        if let Ok(results_vec) = db.get_range_cf_with_keys::<Value>(
+        if let Ok(results_vec) = db.get_range_cf(
             cf_name,
             "0",
             &params.count.to_string(),
             *limit,
             Direction::Forward,
+            true,
         ) {
             range_keys_success += 1;
             total_range_keys_results += results_vec.len();
@@ -327,18 +318,15 @@ pub async fn start(
     results["operations"]["range_queries"]["with_keys"]["avg_results"] =
         json!(avg_range_keys_results);
 
-    // 6. Delete all records (cleanup)
+    // 6. Delete (drop CF)
     let delete_start = Instant::now();
-
-    // Just drop the column family entirely (much faster than individual deletes)
     let delete_success = db.drop_cf(cf_name).is_ok();
-
     let delete_duration = delete_start.elapsed();
-    results["operations"]["deletes"]["count"] = json!(1); // One drop operation
+    results["operations"]["deletes"]["count"] = json!(1);
     results["operations"]["deletes"]["success"] = json!(delete_success);
     results["operations"]["deletes"]["duration_ms"] = json!(delete_duration.as_millis());
 
-    // Calculate throughput metrics
+    // Throughput
     let total_duration_secs = benchmark_start.elapsed().as_secs_f64();
     let insert_throughput = params.count as f64 / insert_duration.as_secs_f64();
     let query_throughput = params.query_count as f64 / query_duration.as_secs_f64();
@@ -357,16 +345,13 @@ pub async fn start(
         "total_duration_sec": total_duration_secs
     });
 
-    // Add storage metrics if requested
     if params.include_storage {
-        // Create a fresh column family to measure storage
         let cf_storage = "storage_benchmark_cf";
         if !db.cf_exists(cf_storage) || db.create_cf(cf_storage).is_err() {
             results["storage"] = json!({ "error": "Failed to create storage test column family" });
             return HttpResponse::Ok().json(results);
         }
 
-        // Insert a sample of records
         let storage_sample_size = std::cmp::min(params.count, 1000);
         for i in 0..storage_sample_size {
             let key = format!("storage_key_{}", i);
@@ -374,10 +359,8 @@ pub async fn start(
             let _ = db.insert_cf(cf_storage, &key, &value);
         }
 
-        // Get storage metrics
         results["storage"] = get_storage_metrics(&db, cf_storage).await;
 
-        // Calculate approximate storage efficiency
         if let Some(total_mb) = results["storage"].get("total_mb") {
             let inserted_mb = (storage_sample_size * sample_size) as f64 / (1024.0 * 1024.0);
             if let Some(total_mb) = total_mb.as_f64() {
@@ -388,11 +371,9 @@ pub async fn start(
             }
         }
 
-        // Cleanup
         let _ = db.drop_cf(cf_storage);
     }
 
-    // Add comparison of keys vs no-keys performance
     if query_duration.as_secs_f64() > 0.0 && query_keys_duration.as_secs_f64() > 0.0 {
         let query_comparison = query_keys_duration.as_secs_f64() / query_duration.as_secs_f64();
         results["comparisons"] = json!({
